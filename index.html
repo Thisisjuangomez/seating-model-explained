@@ -1,0 +1,1183 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Seating Model Explained</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* Layout: one living 3D office (the paper's case: 5 rooms, 40 desks, 25 people) under an HTML narrative layer; 16:9, text never covers the focal subject. */
+:root {
+  color-scheme: dark;
+  --navy: #14263D; --navy-card: #1D3452; --blue: #356AE6; --blue-soft: #EEF4FF; --teal: #16A6A1; --mint: #DDF5EB;
+  --cloud: #F7F9FC; --white: #FFFFFF; --lav: #B8B5FF; --cyan: #6EE7F5; --amber: #B45309; --amber-2: #F2B84B; --coral: #E76F6A; --green: #15803D;
+  --ink: #172B4D; --ink-2: #64748B; --paper: #FFFFFF; --paper-2: #B7C3D4; --border: #E2E8F0;
+  --tA: #4F6D8A; --tB: #7C6FA6; --tC: #8A7A52; --tD: #A0687A;
+  --font: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --t-display: clamp(38px, 4.9vw, 92px);
+  --t-h2: clamp(24px, 2.6vw, 50px);
+  --t-lead: clamp(14px, 1.08vw, 20px);
+  --t-label: clamp(11px, .78vw, 14px);
+  --ease-out: cubic-bezier(.16, 1, .3, 1);
+  --g: max(16px, env(safe-area-inset-left, 0px));
+  --gr: max(16px, env(safe-area-inset-right, 0px));
+  --side: clamp(0px, 3.2vw, 60px);
+}
+html, body { height: 100%; }
+body { background: var(--navy); color: var(--paper); font-family: var(--font); overflow: hidden; -webkit-font-smoothing: antialiased; }
+#stage { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+#scrim, #band { position: fixed; pointer-events: none; transition: opacity 700ms ease, background 600ms ease; }
+#scrim { inset: 0; opacity: 0; }
+#band { left: 0; right: 0; bottom: 0; height: calc(env(safe-area-inset-bottom, 0px) + 140px); }
+#labels { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
+.tag3d { position: absolute; left: 0; top: 0; white-space: nowrap; font-size: 13px; font-weight: 600; padding: 6px 10px; border-radius: 8px; display: inline-flex; gap: 8px; align-items: center; font-variant-numeric: tabular-nums; }
+.tag3d .st { font-weight: 700; padding: 2px 6px; border-radius: 4px; color: var(--navy); }
+.tag3d .u { font-family: var(--mono); font-weight: 700; padding: 1px 7px; border-radius: 4px; font-size: 12px; }
+.on-light .tag3d { background: rgba(255,255,255,.94); color: var(--ink); box-shadow: 0 6px 18px rgba(20,38,61,.12); }
+.on-dark .tag3d { background: rgba(20,38,61,.86); color: var(--paper); border: 1px solid rgba(255,255,255,.14); }
+
+#ui { position: fixed; inset: 0; pointer-events: none; }
+#ui > * { pointer-events: auto; }
+.top { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 18px); left: var(--g); right: var(--gr); display: flex; align-items: center; justify-content: space-between; gap: 16px; pointer-events: none; padding-inline: clamp(0px, 2vw, 32px); }
+.brand { display: inline-flex; align-items: center; gap: 10px; font-weight: 800; font-size: 13px; letter-spacing: .16em; }
+.brand svg { width: 24px; height: 24px; }
+
+.panel { position: absolute; display: flex; flex-direction: column; gap: clamp(10px, 1.15vw, 18px); opacity: 0; transform: translateY(18px); transition: opacity 520ms var(--ease-out), transform 620ms var(--ease-out); }
+.panel.in { opacity: 1; transform: none; }
+.panel.left, .panel.right, .panel.wide { top: calc(env(safe-area-inset-top, 0px) + 66px); bottom: calc(env(safe-area-inset-bottom, 0px) + 96px); justify-content: center; overflow: auto; scrollbar-width: thin; padding-right: 4px; }
+.panel.left { left: calc(var(--g) + var(--side)); width: min(36rem, 40vw); }
+.panel.right { right: calc(var(--gr) + var(--side)); width: min(37rem, 41vw); }
+.panel.wide { left: calc(var(--g) + var(--side)); width: min(64rem, 60vw); }
+.panel.center { left: 50%; top: 50%; translate: -50% -50%; width: min(70rem, calc(100vw - 32px)); }
+.panel.cover { left: calc(var(--g) + var(--side)); top: 50%; translate: 0 -50%; width: min(52rem, 60vw); }
+.panel.band { left: calc(var(--g) + var(--side)); right: calc(var(--gr) + var(--side)); top: calc(env(safe-area-inset-top, 0px) + 66px); bottom: calc(env(safe-area-inset-bottom, 0px) + 96px); justify-content: space-between; pointer-events: none; }
+.panel.band > * { pointer-events: auto; }
+.panel.band .head { max-width: min(46rem, 60vw); display: flex; flex-direction: column; gap: 10px; }
+.eyebrow { font-size: var(--t-label); font-weight: 700; letter-spacing: .14em; text-transform: uppercase; display: inline-flex; gap: 10px; align-items: center; }
+.eyebrow::before { content: ""; width: 22px; height: 3px; border-radius: 2px; background: var(--teal); }
+h1, h2, h3, p { margin: 0; }
+h1 { font-size: var(--t-display); line-height: 1.02; font-weight: 800; letter-spacing: -.035em; text-wrap: balance; }
+h2 { font-size: var(--t-h2); line-height: 1.08; font-weight: 800; letter-spacing: -.028em; text-wrap: balance; }
+h3 { font-size: clamp(14px, 1.02vw, 19px); font-weight: 700; letter-spacing: -.01em; line-height: 1.3; }
+.lead { font-size: var(--t-lead); line-height: 1.5; text-wrap: pretty; }
+.small { font-size: var(--t-label); line-height: 1.45; }
+.mono { font-family: var(--mono); font-weight: 500; }
+.on-light { color: var(--ink); }
+.on-light .lead, .on-light .small, .on-light .muted { color: var(--ink-2); }
+.on-dark .lead, .on-dark .small, .on-dark .muted { color: var(--paper-2); }
+.cy { color: var(--cyan); }
+
+.card { border-radius: 12px; padding: clamp(12px, 1vw, 18px); display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.on-light .card { background: var(--white); border: 1px solid var(--border); }
+.on-dark .card { background: var(--navy-card); border: 1px solid rgba(255,255,255,.1); }
+.card.hl { background: var(--blue-soft) !important; border: 1.5px solid var(--blue) !important; color: var(--ink); }
+.card.hl .muted, .card.hl .small { color: var(--ink-2); }
+.card .k { font-size: 12px; font-weight: 700; letter-spacing: .02em; font-style: italic; }
+.on-light .card .k { color: var(--ink-2); }
+.on-dark .card .k { color: var(--paper-2); }
+.card p { font-size: clamp(13px, .92vw, 16px); line-height: 1.45; }
+.on-light .card p { color: var(--ink-2); }
+.on-dark .card p { color: var(--paper-2); }
+.card.hard { border-top: 3px solid var(--blue) !important; }
+.card.pref { border: 1.5px dashed var(--teal) !important; }
+.card.topline { border: 0 !important; border-top: 3px solid var(--navy) !important; border-radius: 0; background: transparent !important; padding-inline: 0; }
+.on-dark .card.topline { border-top-color: var(--teal) !important; }
+button.card { font: inherit; color: inherit; text-align: left; cursor: pointer; transition: box-shadow 160ms ease, transform 160ms ease; }
+button.card:hover { box-shadow: 0 0 0 2px var(--teal); }
+button.card[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--teal), 0 8px 22px rgba(20,38,61,.16); }
+.cols { display: grid; gap: 12px; }
+.c2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.c3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.c4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.c5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.big { font-size: clamp(28px, 2.7vw, 50px); font-weight: 800; letter-spacing: -.03em; line-height: 1; font-variant-numeric: tabular-nums; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; font-weight: 600; align-items: center; }
+.legend span { display: inline-flex; gap: 6px; align-items: center; }
+.sq-hard { width: 13px; height: 13px; border-radius: 3px; background: var(--blue); display: inline-block; }
+.sq-pref { width: 13px; height: 13px; border-radius: 3px; border: 2px dashed var(--teal); display: inline-block; }
+
+table.t { width: 100%; border-collapse: collapse; font-size: clamp(12px, .88vw, 15px); font-variant-numeric: tabular-nums; }
+table.t th, table.t td { text-align: left; padding: 7px 9px; vertical-align: top; }
+table.t thead th { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.on-light table.t thead th { color: var(--ink-2); border-bottom: 2px solid var(--border); }
+.on-dark table.t thead th { color: var(--paper-2); border-bottom: 2px solid rgba(255,255,255,.14); }
+.on-light table.t td { border-bottom: 1px solid var(--border); }
+.on-dark table.t td { border-bottom: 1px solid rgba(255,255,255,.1); }
+.on-light table.t { background: rgba(255,255,255,.92); border-radius: 12px; }
+table.t tr.rec td { background: var(--blue-soft); }
+table.t tr.pick { cursor: pointer; }
+table.t tr.pick:hover td { box-shadow: inset 0 -2px 0 var(--teal); }
+table.t tr.on td { outline: 2px solid var(--teal); outline-offset: -2px; }
+table.t td.num { text-align: right; }
+table.t th.num { text-align: right; }
+.pickhint { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--teal); margin-left: 6px; vertical-align: middle; }
+
+.ex { font-family: var(--mono); font-size: clamp(13px, .95vw, 16px); display: flex; flex-direction: column; gap: 6px; }
+.ex div { display: flex; justify-content: space-between; gap: 10px; padding: 10px 12px; border-radius: 8px; background: rgba(255,255,255,.07); }
+.ex b { font-size: 1.05em; white-space: nowrap; }
+.ex .one { color: var(--cyan); }
+.formula { font-family: var(--mono); font-weight: 700; font-size: clamp(16px, 1.6vw, 30px); padding: clamp(14px, 1.4vw, 24px); border-radius: 14px; background: var(--navy); color: var(--white); letter-spacing: -.01em; }
+.fx span[data-f] { cursor: pointer; padding: 2px 6px; border-radius: 6px; transition: background 160ms ease; }
+.fx span[data-f]:hover { background: rgba(255,255,255,.1); }
+.fx span[data-f].on { background: rgba(110,231,245,.22); box-shadow: inset 0 0 0 1px var(--cyan); }
+#fparts .card.on { box-shadow: 0 0 0 2px var(--teal); }
+#dec li { display: block; }
+#dec .card { padding: 12px 14px; }
+.formula small { display: block; font-family: var(--font); font-weight: 500; font-size: 13px; color: var(--paper-2); margin-top: 8px; letter-spacing: 0; }
+code, .code { font-family: var(--mono); font-weight: 500; font-size: .95em; }
+.pill { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 999px; background: var(--mint); color: var(--navy); font-weight: 700; }
+.chipw { font-size: 12px; font-weight: 700; color: var(--amber); }
+.on-dark .chipw { color: var(--amber-2); }
+.chipg { font-size: 12px; font-weight: 700; color: var(--green); }
+.cnum { font-family: var(--mono); font-weight: 700; color: var(--blue); }
+.on-dark .cnum { color: var(--cyan); }
+.steps { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr auto 1fr; gap: 10px; align-items: stretch; }
+.steps .arrow { align-self: center; color: var(--teal); }
+.steps .arrow svg { width: 26px; height: 26px; }
+.numlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.numlist li { display: grid; grid-template-columns: 28px 1fr; gap: 12px; align-items: start; font-size: clamp(13px, .98vw, 17px); line-height: 1.4; }
+.numlist .n { width: 26px; height: 26px; border-radius: 6px; display: grid; place-items: center; background: var(--blue); color: #fff; font-weight: 800; font-size: 13px; }
+.bul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: clamp(13px, .95vw, 16px); line-height: 1.4; }
+
+.bars { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: clamp(8px, 1.2vw, 18px); align-items: end; height: clamp(160px, 26vh, 280px); }
+.bars button { all: unset; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 6px; height: 100%; justify-content: flex-end; }
+.bars .lane { width: 100%; max-width: 64px; flex: 1; background: #E3E8EF; border-radius: 8px; position: relative; overflow: hidden; }
+.bars .fill { position: absolute; left: 0; right: 0; bottom: 0; background: #4C6A92; border-radius: 8px; transition: background 200ms ease; }
+.bars button[aria-pressed="true"] .fill { background: var(--blue); }
+.bars .v { font-weight: 800; font-size: clamp(15px, 1.2vw, 21px); font-variant-numeric: tabular-nums; }
+.bars .d { font-size: 12px; font-weight: 600; color: var(--ink-2); }
+.bars button:focus-visible .lane { outline: 2px solid var(--blue); outline-offset: 2px; }
+.tagb { display: inline-block; font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 6px; background: var(--blue-soft); color: #2A57C4; }
+
+.alloc { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.alloc button { all: unset; cursor: pointer; display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 12px; background: var(--white); border: 1px solid var(--border); color: var(--ink); min-width: 0; }
+.alloc button.hl { background: var(--blue-soft); border: 1.5px solid var(--blue); }
+.alloc button[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--teal); }
+.alloc h3 { font-size: 15px; }
+.alloc .s { font-size: 12px; color: var(--ink-2); font-weight: 500; }
+.room { display: grid; grid-template-columns: 52px 1fr auto; gap: 8px; align-items: center; font-size: 12px; }
+.room b { font-weight: 600; color: var(--ink-2); }
+.room .seats { display: flex; gap: 3px; flex-wrap: wrap; }
+.room .seats i { width: 13px; height: 13px; display: inline-block; }
+.room .seats i.e { background: repeating-linear-gradient(45deg, #CBD5E1 0 2px, transparent 2px 4px); border: 1px solid #CBD5E1; border-radius: 2px; }
+.room .r { font-variant-numeric: tabular-nums; font-weight: 600; font-size: 12px; }
+.room .r.amb { color: var(--amber); font-weight: 800; }
+.mk { display: inline-block; width: 13px; height: 13px; }
+
+.sw { display: flex; align-items: center; gap: 14px; padding: 12px 14px; border-radius: 12px; background: rgba(255,255,255,.7); border: 1px solid var(--border); }
+.swtrack { width: 58px; height: 32px; border-radius: 16px; position: relative; background: var(--teal); transition: background 260ms ease; flex: none; }
+.swtrack::after { content: ""; position: absolute; top: 4px; left: 30px; width: 24px; height: 24px; border-radius: 50%; background: var(--white); transition: left 260ms var(--ease-out); }
+.sw.off .swtrack { background: var(--amber); }
+.sw.off .swtrack::after { left: 4px; }
+.sw b { display: block; font-family: var(--mono); font-size: 15px; }
+.slider { display: flex; flex-direction: column; gap: 6px; }
+.slider label { display: flex; justify-content: space-between; font-size: 14px; font-weight: 600; gap: 10px; }
+.slider output { font-family: var(--mono); font-weight: 700; color: var(--teal); }
+input[type=range] { width: 100%; accent-color: var(--teal); height: 26px; }
+.ends { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; font-weight: 600; opacity: .8; }
+.lam { font-family: var(--font); font-size: clamp(80px, 9vw, 170px); font-weight: 800; color: var(--teal); line-height: .9; text-align: center; }
+:focus-visible { outline: 2px solid var(--cyan); outline-offset: 3px; }
+.on-light :focus-visible { outline-color: var(--blue); }
+.cover-orbits { position: absolute; right: 0; top: 0; bottom: 0; width: 46vw; pointer-events: none; opacity: 0; transition: opacity 900ms ease; }
+.cover-orbits.in { opacity: 1; }
+
+/* footer */
+.foot { position: absolute; left: calc(var(--g) + clamp(0px, 2vw, 32px)); right: calc(var(--gr) + clamp(0px, 2vw, 32px)); bottom: calc(env(safe-area-inset-bottom, 0px) + 60px); display: flex; justify-content: space-between; gap: 16px; font-size: 11px; font-weight: 500; opacity: .78; }
+.foot b { font-weight: 800; font-variant-numeric: tabular-nums; }
+.nav { position: absolute; left: var(--g); right: var(--gr); bottom: calc(env(safe-area-inset-bottom, 0px) + 14px); display: flex; align-items: center; gap: 12px; padding-inline: clamp(0px, 2vw, 32px); }
+.prog { flex: 1; display: flex; gap: 4px; min-width: 0; }
+.prog button { flex: 1; height: 22px; border: 0; padding: 0; background: transparent; color: inherit; cursor: pointer; position: relative; min-width: 5px; }
+.prog button::after { content: ""; position: absolute; left: 0; right: 0; top: 10px; height: 2px; border-radius: 2px; background: currentColor; opacity: .32; }
+.prog button.done::after { opacity: .65; }
+.prog button.on::after { opacity: 1; height: 4px; top: 9px; background: var(--teal); }
+.counter { font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: .06em; min-width: 4.5em; text-align: center; }
+.iconbtn { height: 36px; min-width: 36px; padding: 0 9px; border-radius: 10px; border: 1px solid currentColor; background: transparent; color: inherit; display: inline-flex; gap: 6px; align-items: center; justify-content: center; cursor: pointer; opacity: .88; flex: none; font: 600 13px var(--font); }
+.iconbtn:hover { opacity: 1; }
+.iconbtn svg { width: 18px; height: 18px; }
+.iconbtn[aria-pressed="true"] { background: var(--teal); border-color: var(--teal); color: var(--navy); opacity: 1; }
+#ui.on-light .top, #ui.on-light .nav, #ui.on-light .foot { color: var(--ink); }
+#ui.on-dark .top, #ui.on-dark .nav, #ui.on-dark .foot { color: var(--paper); }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+#loading { position: fixed; inset: 0; display: grid; place-items: center; background: var(--navy); color: var(--paper-2); font-size: 13px; letter-spacing: .14em; text-transform: uppercase; transition: opacity 600ms ease; z-index: 5; }
+#loading.gone { opacity: 0; pointer-events: none; }
+
+@media (max-width: 860px) {
+  .panel.left, .panel.right, .panel.wide, .panel.band, .panel.cover { left: var(--g); right: var(--gr); width: auto; top: auto; translate: none; bottom: calc(env(safe-area-inset-bottom, 0px) + 88px); max-height: 62vh; overflow: auto; justify-content: flex-start; pointer-events: auto; }
+  .panel.band { gap: 12px; }
+  .panel.band .head { max-width: none; }
+  .cols.c3, .cols.c4, .cols.c5, .alloc, .steps { grid-template-columns: minmax(0, 1fr); }
+  .steps .arrow { display: none; }
+  .cols.c2 { grid-template-columns: minmax(0, 1fr); }
+  .foot { display: none; }
+  .cover-orbits { display: none; }
+  .hide-sm { display: none !important; }
+}
+@media (prefers-reduced-motion: reduce) { .panel, #scrim, .cover-orbits { transition: none !important; } }
+</style>
+
+<canvas id="stage" aria-hidden="true"></canvas>
+<div id="scrim"></div>
+<div id="band"></div>
+<div id="labels" class="on-dark" aria-hidden="true"></div>
+
+<div id="ui" class="on-dark">
+  <svg class="cover-orbits" id="orbits" viewBox="0 0 600 800" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+    <ellipse cx="330" cy="400" rx="250" ry="120" fill="none" stroke="#6EE7F5" stroke-opacity=".22" stroke-width="1.5" transform="rotate(-28 330 400)"/>
+    <ellipse cx="330" cy="400" rx="190" ry="78" fill="none" stroke="#B8B5FF" stroke-opacity=".2" stroke-width="1.5" transform="rotate(-28 330 400)"/>
+    <circle cx="330" cy="400" r="44" fill="#14263D" stroke="#FFFFFF" stroke-opacity=".25"/>
+    <circle cx="545" cy="288" r="11" fill="#16A6A1"/>
+  </svg>
+  <div class="top">
+    <span class="brand"><svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="4.5" fill="currentColor"/><ellipse cx="16" cy="16" rx="13" ry="6.5" fill="none" stroke="currentColor" stroke-width="2" transform="rotate(-30 16 16)"/><circle cx="26.4" cy="9.8" r="2.6" fill="#16A6A1"/></svg>ORBIT</span>
+  </div>
+  <div id="stagehtml"></div>
+  <div class="foot" id="foot"><span id="footsrc"></span><b id="footnum"></b></div>
+  <div class="nav">
+    <button class="iconbtn" id="prev" aria-label="Previous slide"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m14.5 6-6 6 6 6"/></svg></button>
+    <div class="prog" id="prog" role="tablist" aria-label="Slides"></div>
+    <span class="counter" id="counter">01 / 17</span>
+    <button class="iconbtn" id="next" aria-label="Next slide"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9.5 6 6 6-6 6"/></svg></button>
+    <button class="iconbtn hide-sm" id="motion" aria-pressed="false" aria-label="Reduce motion" title="Reduce motion"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 12h4l2-5 4 10 2-5h4"/></svg></button>
+    <button class="iconbtn hide-sm" id="fs" aria-label="Full screen" title="Full screen (F)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg></button>
+  </div>
+  <div class="sr" aria-live="polite" id="live"></div>
+</div>
+<div id="loading">Preparing the office…</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(() => {
+'use strict';
+if (!window.THREE) { document.getElementById('loading').textContent = 'The 3D engine could not load. Reload the page.'; return; }
+/* ============================================================ PALETTE */
+const P = { navy: '#14263D', navy2: '#1C3352', navy3: '#24406A', blue: '#356AE6', teal: '#16A6A1', mint: '#DDF5EB', cloud: '#F7F9FC', white: '#FFFFFF', lav: '#B8B5FF', cyan: '#6EE7F5', amber: '#F2B84B', coral: '#E76F6A' };
+const lin = (h) => new THREE.Color(h).convertSRGBToLinear();
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const ease = { io: (t) => (t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2), out: (t) => 1 - Math.pow(1 - t, 3), sine: (t) => -(Math.cos(Math.PI * t) - 1) / 2, lin: (t) => t };
+const sysReduced = matchMedia('(prefers-reduced-motion: reduce)');
+let reduced = sysReduced.matches;
+
+/* ============================================================ RENDERER */
+const canvas = document.getElementById('stage');
+let renderer;
+try { renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' }); }
+catch (e) { document.getElementById('loading').textContent = 'Este navegador no puede mostrar la escena 3D (WebGL desactivado).'; return; }
+renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+
+const scene = new THREE.Scene();
+const BG_LIGHT = lin('#EEF2F7'), BG_DARK = lin(P.navy);
+scene.background = BG_LIGHT.clone();
+scene.fog = new THREE.Fog(BG_LIGHT.clone(), 80, 190);
+const camera = new THREE.PerspectiveCamera(32, innerWidth / innerHeight, 0.1, 500);
+
+const hemi = new THREE.HemisphereLight(lin('#FFFFFF'), lin('#C9D2DD'), 0.9);
+scene.add(hemi);
+const sun = new THREE.DirectionalLight(lin('#FFF3E2'), 1.5);
+sun.position.set(-26, 34, 20);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -30, right: 30, top: 24, bottom: -24, near: 1, far: 100 });
+sun.shadow.bias = -0.0004;
+sun.shadow.radius = 4;
+scene.add(sun);
+const fill = new THREE.DirectionalLight(lin('#CFE0FF'), 0.35);
+fill.position.set(24, 14, -10);
+scene.add(fill);
+const glow = new THREE.PointLight(lin(P.cyan), 0, 60, 2);
+glow.position.set(0, 10, 0);
+scene.add(glow);
+
+/* ============================================================ MATERIALS */
+const physMats = []; // fade with digital twin
+const digiMats = []; // appear with digital twin
+const cache = {};
+function pmat(hex, o = {}) {
+  const key = hex + '|' + JSON.stringify(o);
+  if (cache[key]) return cache[key];
+  const m = new THREE.MeshStandardMaterial({ color: lin(hex), roughness: o.r ?? 0.82, metalness: o.m ?? 0, transparent: (o.o ?? 1) < 1, opacity: o.o ?? 1 });
+  if (o.e) { m.emissive = lin(o.e); m.emissiveIntensity = o.ei ?? 0.4; }
+  physMats.push({ m, base: o.o ?? 1, k: o.k ?? 0.9, emBase: o.ei ?? 0, lamp: !!o.lamp, screen: !!o.screen });
+  cache[key] = m;
+  return m;
+}
+function dmat(hex, base = 1, o = {}) {
+  const m = new THREE.MeshBasicMaterial({ color: lin(hex), transparent: true, opacity: 0, depthWrite: false, side: o.side || THREE.FrontSide });
+  if (o.add) m.blending = THREE.AdditiveBlending;
+  digiMats.push({ m, base });
+  return m;
+}
+function lmat(hex, base = 1) {
+  const m = new THREE.LineBasicMaterial({ color: lin(hex), transparent: true, opacity: 0, depthWrite: false });
+  digiMats.push({ m, base });
+  return m;
+}
+
+/* geometry helpers */
+const gcache = {};
+function capsule(r, len, seg = 10, radial = 14) {
+  const key = `c${r}_${len}`;
+  if (gcache[key]) return gcache[key];
+  const pts = [];
+  for (let i = 0; i <= seg; i++) { const a = -Math.PI / 2 + (i / seg) * (Math.PI / 2); pts.push(new THREE.Vector2(Math.max(1e-4, Math.cos(a) * r), Math.sin(a) * r)); }
+  for (let i = 0; i <= seg; i++) { const a = (i / seg) * (Math.PI / 2); pts.push(new THREE.Vector2(Math.max(1e-4, Math.cos(a) * r), len + Math.sin(a) * r)); }
+  const g = new THREE.LatheGeometry(pts, radial);
+  g.translate(0, -(len + r), 0); // pivot at top
+  return (gcache[key] = g);
+}
+function box(w, h, d, mat, x = 0, y = 0, z = 0, parent, shadow = true) {
+  const k = `b${w}_${h}_${d}`;
+  const g = gcache[k] || (gcache[k] = new THREE.BoxGeometry(w, h, d));
+  const m = new THREE.Mesh(g, mat);
+  m.position.set(x, y, z);
+  m.castShadow = shadow; m.receiveShadow = true;
+  if (parent) parent.add(m);
+  return m;
+}
+function cyl(rt, rb, h, mat, x = 0, y = 0, z = 0, parent, seg = 20) {
+  const k = `y${rt}_${rb}_${h}_${seg}`;
+  const g = gcache[k] || (gcache[k] = new THREE.CylinderGeometry(rt, rb, h, seg));
+  const m = new THREE.Mesh(g, mat);
+  m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true;
+  if (parent) parent.add(m);
+  return m;
+}
+function sphere(r, mat, x = 0, y = 0, z = 0, parent, ws = 18, hs = 14) {
+  const k = `s${r}_${ws}`;
+  const g = gcache[k] || (gcache[k] = new THREE.SphereGeometry(r, ws, hs));
+  const m = new THREE.Mesh(g, mat);
+  m.position.set(x, y, z); m.castShadow = true;
+  if (parent) parent.add(m);
+  return m;
+}
+
+
+/* ============================================================ OFFICE — the paper's case study: 5 rooms with 8, 7, 10, 8 and 7 desks (40) */
+const ROOMS = [
+  { id: 'R1', n: 1, desks: 8, cx: -14, cz: -6, back: true },
+  { id: 'R2', n: 2, desks: 7, cx: 0, cz: -6, back: true },
+  { id: 'R3', n: 3, desks: 10, cx: 14, cz: -6, back: true },
+  { id: 'R4', n: 4, desks: 8, cx: -14, cz: 6, back: false },
+  { id: 'R5', n: 5, desks: 7, cx: 0, cz: 6, back: false },
+];
+ROOMS.forEach((r) => { r.name = `Room ${r.n}`; r.cols = Math.ceil(r.desks / 2); r.hw = r.cols * 0.8 + 1.7; });
+const roomById = Object.fromEntries(ROOMS.map((r) => [r.id, r]));
+const DESKS = [];
+for (const r of ROOMS) {
+  let k = 0;
+  for (let row = 0; row < 2; row++) {
+    const cnt = row === 0 ? r.cols : r.desks - r.cols;
+    for (let j = 0; j < cnt; j++) {
+      k++;
+      const x = r.cx + (j - (r.cols - 1) / 2) * 1.6;
+      DESKS.push({ id: `${r.id}-${k}`, zone: r.id, i: k - 1, row, x, dz: r.cz + (row ? 0.4 : -0.4), cz: r.cz + (row ? 1.12 : -1.12), face: row ? Math.PI : 0, az: r.cz + (row ? 2.35 : -2.35) });
+    }
+  }
+}
+const deskById = Object.fromEntries(DESKS.map((d) => [d.id, d]));
+const doorZ = (r) => (r.back ? r.cz + 3.7 : r.cz - 3.7);
+const exitX = (r) => r.cx + r.cols * 0.8 + 0.85;
+
+const office = new THREE.Group(); scene.add(office);
+const floorMat = new THREE.MeshStandardMaterial({ color: lin('#E3E8EF'), roughness: 0.92 });
+const FLOOR_LIGHT = lin('#E3E8EF'), FLOOR_DARK = lin('#0F1F33');
+box(44, 0.4, 28, floorMat, 0, -0.2, 0, office, false).receiveShadow = true;
+box(44.2, 0.5, 28.2, pmat('#C9D1DC', { k: 0.6 }), 0, -0.47, 0, office, false);
+for (const r of ROOMS) box(r.hw * 2, 0.02, 7.2, pmat('#D9DFE7', { k: 0.95 }), r.cx, 0.01, r.cz, office, false);
+box(9.6, 0.02, 6.6, pmat('#D5EEE4', { k: 0.95 }), 14, 0.012, 6.3, office, false);
+const wallMat = pmat('#F4F6F9', { r: 0.9, k: 0.96 });
+const glassMat = pmat('#BFD7F2', { r: 0.15, o: 0.22, k: 1 });
+const mullMat = pmat('#2A3B52', { r: 0.6 });
+function wallRun(axis, fixed, from, to) {
+  const H = 3.6, n = Math.round((to - from) / 5.5), step = (to - from) / n;
+  for (let i = 0; i <= n; i++) { const p = from + i * step; if (axis === 'x') box(0.5, H, 0.5, wallMat, p, H / 2, fixed, office); else box(0.5, H, 0.5, wallMat, fixed, H / 2, p, office); }
+  const mid = (from + to) / 2, len = to - from;
+  if (axis === 'x') { box(len, 0.6, 0.4, wallMat, mid, 0.3, fixed, office); box(len, 0.35, 0.45, wallMat, mid, H - 0.175, fixed, office); box(len, H - 0.95, 0.06, glassMat, mid, 0.6 + (H - 0.95) / 2, fixed, office, false).castShadow = false; box(len, 0.05, 0.12, mullMat, mid, 2.0, fixed + 0.05, office, false); }
+  else { box(0.4, 0.6, len, wallMat, fixed, 0.3, mid, office); box(0.45, 0.35, len, wallMat, fixed, H - 0.175, mid, office); box(0.06, H - 0.95, len, glassMat, fixed, 0.6 + (H - 0.95) / 2, mid, office, false).castShadow = false; box(0.12, 0.05, len, mullMat, fixed + 0.05, 2.0, mid, office, false); }
+}
+wallRun('x', -13.6, -21.6, 21.6);
+wallRun('z', -21.6, -13.6, 13.6);
+const partMat = pmat('#CFE2F4', { r: 0.1, o: 0.28, k: 1 });
+const frameMat = pmat('#B7C2D0', { r: 0.5 });
+function partition(x1, z1, x2, z2) {
+  const len = Math.hypot(x2 - x1, z2 - z1), ang = Math.atan2(z2 - z1, x2 - x1);
+  const g = new THREE.Group(); g.position.set((x1 + x2) / 2, 0, (z1 + z2) / 2); g.rotation.y = -ang; office.add(g);
+  box(len, 1.9, 0.04, partMat, 0, 1.05, 0, g, false).castShadow = false;
+  box(len, 0.06, 0.08, frameMat, 0, 2.02, 0, g, false); box(len, 0.08, 0.08, frameMat, 0, 0.06, 0, g, false);
+}
+for (const r of ROOMS) {
+  const x0 = r.cx - r.hw, x1 = r.cx + r.hw, zA = r.cz - 3.7, zB = r.cz + 3.7, zc = doorZ(r), zo = r.back ? zA : zB, ex = exitX(r);
+  partition(x0, zo, x1, zo); partition(x0, zA, x0, zB); partition(x1, zA, x1, zB);
+  partition(x0, zc, ex - 0.6, zc); partition(ex + 0.6, zc, x1, zc);
+}
+const whiteSatin = pmat('#F5F7FA', { r: 0.45 });
+const greyMetal = pmat('#9AA6B5', { r: 0.4, m: 0.2 });
+const fabric = pmat('#2B3F5C', { r: 0.95 });
+const fabricTeal = pmat('#2B8C88', { r: 0.95 });
+const sofa = new THREE.Group(); sofa.position.set(14, 0, 8.8); office.add(sofa);
+box(3.6, 0.42, 1.0, fabric, 0, 0.3, 0, sofa); box(3.6, 0.6, 0.25, fabric, 0, 0.72, 0.38, sofa);
+box(0.25, 0.55, 1.0, fabric, -1.9, 0.45, 0, sofa); box(0.25, 0.55, 1.0, fabric, 1.9, 0.45, 0, sofa);
+cyl(0.7, 0.7, 0.05, whiteSatin, 14, 0.42, 6.4, office, 32); cyl(0.06, 0.06, 0.4, greyMetal, 14, 0.2, 6.4, office);
+const armchair = (x, z, r) => { const g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = r; office.add(g); box(0.95, 0.4, 0.9, fabricTeal, 0, 0.3, 0, g); box(0.95, 0.55, 0.2, fabricTeal, 0, 0.65, 0.35, g); };
+armchair(11.6, 4.9, Math.PI * 0.75); armchair(16.4, 4.9, -Math.PI * 0.75);
+const potMat = pmat('#EEF1F5', { r: 0.6 });
+const leafA = pmat('#5E9C8C', { r: 0.9 }), leafB = pmat('#3F7E72', { r: 0.9 });
+function plant(x, z, s = 1) {
+  const g = new THREE.Group(); g.position.set(x, 0, z); g.scale.setScalar(s); office.add(g);
+  cyl(0.32, 0.25, 0.55, potMat, 0, 0.27, 0, g);
+  [[0, 1.0, 0, .42, leafA], [.22, .8, .12, .32, leafB], [-.2, .85, -.1, .34, leafB], [.05, 1.32, .05, .3, leafA], [-.12, 1.15, .2, .26, leafA]].forEach(([a, b, c, r, m]) => {
+    const k = `ico${r}`; const geo = gcache[k] || (gcache[k] = new THREE.IcosahedronGeometry(r, 1));
+    const mesh = new THREE.Mesh(geo, m); mesh.position.set(a, b, c); mesh.castShadow = true; g.add(mesh);
+  });
+}
+[[-20, -12.6, 1.2], [-20, 12.4, 1.1], [20.6, -12.6, 1.2], [19.6, 11.6, 1], [9.2, 11.6, .9], [-7, -0.9, .8], [7, 0.9, .8], [20.4, 1.4, .9], [-7, 12.6, .9]].forEach(([x, z, s]) => plant(x, z, s));
+const lampMat = pmat('#FFFFFF', { e: '#FFF6E8', ei: 1.4, r: 0.4, lamp: true, k: 1 });
+const lampBody = pmat('#2A3B52', { r: 0.5, lamp: true, k: 1 });
+for (const r of ROOMS) { box(r.cols * 1.6 - 0.2, 0.06, 0.22, lampBody, r.cx, 3.05, r.cz, office, false); box(r.cols * 1.6 - 0.4, 0.03, 0.16, lampMat, r.cx, 3.02, r.cz, office, false).castShadow = false; }
+const deskTop = pmat('#F7F8FA', { r: 0.5 });
+const deskLeg = pmat('#CBD3DE', { r: 0.55 });
+const screenMat = pmat('#1A2C45', { r: 0.35, e: '#356AE6', ei: 0.12, screen: true });
+const chairMat = pmat('#2E4262', { r: 0.9 });
+const chairTeal = pmat('#2B8C88', { r: 0.9 });
+const chairBase = pmat('#5B6878', { r: 0.5, m: 0.2 });
+for (const d of DESKS) {
+  const g = new THREE.Group(); g.position.set(d.x, 0, d.dz); office.add(g);
+  box(1.5, 0.05, 0.72, deskTop, 0, 0.74, 0, g);
+  box(0.05, 0.72, 0.6, deskLeg, -0.7, 0.36, 0, g); box(0.05, 0.72, 0.6, deskLeg, 0.7, 0.36, 0, g);
+  const mon = new THREE.Group(); mon.position.set(0, 0, d.row ? -0.26 : 0.26); mon.rotation.y = d.row ? 0 : Math.PI; g.add(mon);
+  box(0.6, 0.36, 0.03, screenMat, 0, 1.05, 0, mon); box(0.05, 0.25, 0.04, deskLeg, 0, 0.86, -0.04, mon); box(0.24, 0.02, 0.16, deskLeg, 0, 0.77, -0.04, mon);
+  const ch = new THREE.Group(); ch.position.set(d.x, 0, d.cz + (d.row ? 0.08 : -0.08)); ch.rotation.y = d.face; office.add(ch);
+  const cm = d.i % 3 === 1 ? chairTeal : chairMat;
+  box(0.5, 0.08, 0.48, cm, 0, 0.47, 0, ch); box(0.48, 0.52, 0.07, cm, 0, 0.78, -0.25, ch);
+  cyl(0.03, 0.03, 0.4, chairBase, 0, 0.25, 0, ch, 8); cyl(0.28, 0.28, 0.03, chairBase, 0, 0.04, 0, ch, 16);
+}
+
+/* ============================================================ DIGITAL LAYER */
+const twin = new THREE.Group(); scene.add(twin);
+const grid = new THREE.GridHelper(44, 44, lin(P.navy3), lin(P.navy3));
+grid.material.transparent = true; grid.material.opacity = 0; grid.material.depthWrite = false; grid.position.y = 0.03;
+digiMats.push({ m: grid.material, base: 0.55 }); twin.add(grid);
+const tileGeo = new THREE.BoxGeometry(1.42, 0.05, 0.66);
+const tileEdgeGeo = new THREE.EdgesGeometry(tileGeo);
+const tiles = {};
+for (const d of DESKS) {
+  const mFree = dmat(P.navy3, 0.95), mEdge = lmat(P.blue, 0.9);
+  const t = new THREE.Mesh(tileGeo, mFree); t.position.set(d.x, 0.06, d.dz); twin.add(t);
+  const e = new THREE.LineSegments(tileEdgeGeo, mEdge); e.position.copy(t.position); twin.add(e);
+  tiles[d.id] = { mFree, mEdge };
+}
+for (const r of ROOMS) {
+  const pts = [[-r.hw, -3.7], [r.hw, -3.7], [r.hw, 3.7], [-r.hw, 3.7], [-r.hw, -3.7]].map(([a, b]) => new THREE.Vector3(r.cx + a, 0.05, r.cz + b));
+  twin.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), lmat(P.blue, 0.9)));
+}
+function haloTexture() {
+  const c = document.createElement('canvas'); c.width = 512; c.height = 400; const x = c.getContext('2d');
+  const rr = (p) => { x.beginPath(); x.moveTo(60 + p, 40 + p); x.lineTo(452 - p, 40 + p); x.quadraticCurveTo(472 - p, 40 + p, 472 - p, 60 + p); x.lineTo(472 - p, 340 - p); x.quadraticCurveTo(472 - p, 360 - p, 452 - p, 360 - p); x.lineTo(60 + p, 360 - p); x.quadraticCurveTo(40 + p, 360 - p, 40 + p, 340 - p); x.lineTo(40 + p, 60 + p); x.quadraticCurveTo(40 + p, 40 + p, 60 + p, 40 + p); x.closePath(); };
+  x.shadowColor = 'rgba(255,255,255,1)'; x.shadowBlur = 34; x.strokeStyle = 'rgba(255,255,255,.95)'; x.lineWidth = 10; rr(0); x.stroke(); x.stroke();
+  x.shadowBlur = 0; x.fillStyle = 'rgba(255,255,255,.16)'; rr(4); x.fill();
+  const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; return t;
+}
+const haloTex = haloTexture();
+const halos = {};
+for (const r of ROOMS) {
+  const m = new THREE.MeshBasicMaterial({ map: haloTex, color: lin(P.amber), transparent: true, opacity: 0, depthWrite: false });
+  const h = new THREE.Mesh(new THREE.PlaneGeometry(r.hw * 2 + 2.2, 9.4), m); h.rotation.x = -Math.PI / 2; h.position.set(r.cx, 0.08, r.cz); scene.add(h);
+  halos[r.id] = m;
+}
+
+/* ============================================================ PEOPLE — 25 people, groups as in the paper */
+const SKIN = ['#F2CDB0', '#E3B08E', '#C98E68', '#A9714D', '#8A5638', '#6A4029', '#4D2D1F'];
+const HAIR = { black: '#1E1A18', dark: '#3A2A20', brown: '#5C3B26', auburn: '#7A3B22', blond: '#C9A56A', plat: '#DAD3C6', grey: '#9C9C9C' };
+const TOP = { navy: '#1E3350', white: '#F1F3F6', sweater: '#5D7FB8', teal: '#2B8C88', grey: '#8B97A7', sky: '#C7D7EE', char: '#3A4657', sand: '#D9CDB8' };
+const BOT = { navy: '#26324A', grey: '#6E7988', khaki: '#BFB29C', char: '#1F2733' };
+const TEAMS = { A: { name: 'Team A', c: '#4F6D8A', shape: 'square' }, B: { name: 'Team B', c: '#7C6FA6', shape: 'circle' }, C: { name: 'Team C', c: '#8A7A52', shape: 'diamond' }, D: { name: 'Team D', c: '#A0687A', shape: 'triangle' } };
+const GROUP = (n) => (n <= 4 || n === 23 ? 'A' : n <= 12 || n === 24 ? 'B' : n <= 17 || n === 25 ? 'C' : 'D');
+const LOOKS = [
+  [3, 'bun', 'black', 'navy', 'grey', 1.0, 0.99], [0, 'short', 'brown', 'sweater', 'navy', 1.06, 1.02], [5, 'buzz', 'black', 'white', 'char', 1.1, 1.03], [1, 'long', 'dark', 'sky', 'khaki', 0.96, 0.99], [0, 'bob', 'auburn', 'white', 'navy', 0.95, 0.98],
+  [2, 'short', 'black', 'char', 'khaki', 1.08, 1.02], [4, 'afro', 'black', 'sky', 'navy', 0.98, 0.99], [0, 'bob', 'plat', 'navy', 'grey', 0.95, 0.99], [3, 'curly', 'dark', 'sand', 'navy', 1.02, 1.0], [6, 'buzz', 'black', 'navy', 'grey', 1.12, 1.04],
+  [1, 'short', 'blond', 'grey', 'char', 1.08, 1.03], [2, 'long', 'black', 'teal', 'navy', 0.96, 0.97], [0, 'bun', 'brown', 'teal', 'khaki', 0.97, 0.98], [2, 'short', 'grey', 'navy', 'char', 1.12, 1.01], [5, 'afro', 'black', 'sand', 'char', 1.0, 1.0],
+  [0, 'long', 'auburn', 'white', 'grey', 0.96, 0.99], [3, 'short', 'black', 'grey', 'navy', 1.04, 1.01], [1, 'bob', 'black', 'sweater', 'char', 0.94, 0.96], [4, 'buzz', 'black', 'white', 'navy', 1.08, 1.03], [3, 'curly', 'black', 'teal', 'navy', 0.98, 0.98],
+  [1, 'short', 'dark', 'char', 'grey', 1.06, 1.02], [2, 'long', 'dark', 'navy', 'khaki', 0.96, 0.99], [0, 'short', 'auburn', 'sky', 'char', 1.05, 1.03], [6, 'bun', 'black', 'grey', 'navy', 0.97, 0.98], [0, 'short', 'blond', 'char', 'grey', 1.07, 1.04],
+];
+const CAST = LOOKS.map((l, i) => [`${i + 1}`, GROUP(i + 1), ...l, 'R1-1']);
+const eyeMat = pmat('#1C222B', { r: 0.4 });
+const shoeMat = pmat('#1E2329', { r: 0.6 });
+const hairGeoCache = {};
+function hairGeo(r, t0, t1, front) {
+  const k = `${r}_${t0}_${t1}_${front}`;
+  if (hairGeoCache[k]) return hairGeoCache[k];
+  const g = front ? new THREE.SphereGeometry(r, 22, 14, 0, Math.PI * 2, t0, t1)
+    : new THREE.SphereGeometry(r, 22, 14, Math.PI / 2 + 0.36 * Math.PI, 2 * Math.PI - 0.72 * Math.PI, t0, t1);
+  return (hairGeoCache[k] = g);
+}
+function addHair(head, style, mat) {
+  const add = (geo, s = [1, 1, 1], p = [0, 0, 0]) => { const m = new THREE.Mesh(geo, mat); m.scale.set(...s); m.position.set(...p); m.castShadow = true; head.add(m); return m; };
+  const cap = () => add(hairGeo(0.134, 0, 0.42 * Math.PI, true), [1.03, 1.06, 1.06], [0, 0.006, -0.008]);
+  if (style === 'buzz') add(hairGeo(0.129, 0, 0.42 * Math.PI, true), [1.01, 1.03, 1.03]);
+  if (style === 'short') { cap(); add(hairGeo(0.136, 0, 0.6 * Math.PI, false), [1.04, 1.04, 1.06], [0, 0, -0.01]); }
+  if (style === 'bun') { cap(); add(hairGeo(0.136, 0, 0.6 * Math.PI, false), [1.04, 1.04, 1.06]); sphere(0.058, mat, 0, 0.09, -0.13, head); }
+  if (style === 'bob') { cap(); add(hairGeo(0.142, 0, 0.72 * Math.PI, false), [1.08, 1.05, 1.08], [0, 0, -0.01]); }
+  if (style === 'long') { cap(); add(hairGeo(0.14, 0, 0.7 * Math.PI, false), [1.06, 1.05, 1.08]); const b = add(capsule(0.1, 0.16), [1.25, 1, 0.45], [0, -0.03, -0.085]); }
+  if (style === 'curly') { add(hairGeo(0.15, 0, 0.44 * Math.PI, true), [1.06, 1.06, 1.08], [0, 0.012, -0.01]); add(hairGeo(0.152, 0, 0.6 * Math.PI, false), [1.06, 1.04, 1.08]); }
+  if (style === 'afro') { add(hairGeo(0.18, 0, 0.42 * Math.PI, true), [1.08, 1.02, 1.08], [0, 0.03, -0.02]); add(hairGeo(0.18, 0, 0.62 * Math.PI, false), [1.08, 1.02, 1.08], [0, 0.03, -0.02]); }
+}
+const torsoGeoCache = {};
+function torsoGeo() {
+  if (torsoGeoCache.t) return torsoGeoCache.t;
+  const pts = [[0.001, 0], [0.15, 0], [0.165, 0.05], [0.168, 0.2], [0.195, 0.36], [0.205, 0.45], [0.19, 0.51], [0.12, 0.56], [0.001, 0.575]].map(([a, b]) => new THREE.Vector2(a, b));
+  const g = new THREE.LatheGeometry(pts, 22); g.scale(1.12, 1, 0.72);
+  return (torsoGeoCache.t = g);
+}
+function makePerson(def) {
+  const [name, team, skinI, hairStyle, hairC, top, bot, build, height, desk] = def;
+  const skin = pmat(SKIN[skinI], { r: 0.62 });
+  const topM = pmat(TOP[top], { r: 0.85 });
+  const botM = pmat(BOT[bot], { r: 0.88 });
+  const hairM = pmat(HAIR[hairC], { r: 0.75 });
+  const root = new THREE.Group();
+  const body = new THREE.Group(); body.scale.setScalar(height); root.add(body);
+  const hips = new THREE.Group(); hips.position.y = 0.94; body.add(hips);
+  const pelvis = sphere(0.165, botM, 0, 0.03, 0, hips); pelvis.scale.set(1.08 * build, 0.75, 0.8);
+  const torso = new THREE.Mesh(torsoGeo(), topM); torso.castShadow = true; torso.scale.x = build; torso.position.y = 0.02; hips.add(torso);
+  cyl(0.048, 0.055, 0.1, skin, 0, 0.62, 0, hips, 12);
+  const head = new THREE.Group(); head.position.set(0, 0.76, 0.005); hips.add(head);
+  const hm = sphere(0.122, skin, 0, 0, 0, head, 24, 18); hm.scale.set(1, 1.1, 1.02);
+  sphere(0.012, eyeMat, -0.042, 0.012, 0.114, head, 8, 6); sphere(0.012, eyeMat, 0.042, 0.012, 0.114, head, 8, 6);
+  const nose = sphere(0.016, skin, 0, -0.018, 0.122, head, 8, 6); nose.scale.set(0.8, 1.1, 0.9);
+  addHair(head, hairStyle, hairM);
+  const arm = (side) => {
+    const sh = new THREE.Group(); sh.position.set(side * 0.2 * build, 0.5, 0); hips.add(sh);
+    const up = new THREE.Mesh(capsule(0.05, 0.2), topM); up.castShadow = true; sh.add(up);
+    const el = new THREE.Group(); el.position.y = -0.3; sh.add(el);
+    const fo = new THREE.Mesh(capsule(0.044, 0.18), topM); fo.castShadow = true; el.add(fo);
+    sphere(0.048, skin, 0, -0.29, 0.005, el, 10, 8);
+    return { sh, el };
+  };
+  const leg = (side) => {
+    const th = new THREE.Group(); th.position.set(side * 0.09, 0, 0); hips.add(th);
+    const tm = new THREE.Mesh(capsule(0.074, 0.3), botM); tm.castShadow = true; th.add(tm);
+    const kn = new THREE.Group(); kn.position.y = -0.44; th.add(kn);
+    const sm = new THREE.Mesh(capsule(0.063, 0.3), botM); sm.castShadow = true; kn.add(sm);
+    box(0.11, 0.07, 0.24, shoeMat, 0, -0.46, 0.05, kn);
+    return { th, kn };
+  };
+  const p = { name, team, root, body, hips, armL: arm(-1), armR: arm(1), legL: leg(-1), legR: leg(1), head, desk, home: desk, w: 0, phase: Math.random() * 6, look: 0 };
+  return p;
+}
+const people = CAST.map(makePerson);
+people.forEach((p) => { p.num = +p.name; scene.add(p.root); });
+const byNum = Object.fromEntries(people.map((p) => [p.num, p]));
+function pose(p, dt) {
+  // blend sit (w=0) ↔ walk/stand (w=1); p.walking toggles leg cycle
+  const sitting = 1 - p.w;
+  if (p.walking) p.phase += dt * 7.2;
+  const s = p.walking ? Math.sin(p.phase) : 0;
+  const amp = p.walking ? 1 : 0;
+  p.hips.position.y = lerp(0.94 + Math.abs(Math.cos(p.phase)) * 0.025 * amp, 0.53, sitting);
+  p.hips.position.z = lerp(0, -0.04, sitting);
+  p.legL.th.rotation.x = lerp(s * 0.45, -Math.PI / 2, sitting);
+  p.legR.th.rotation.x = lerp(-s * 0.45, -Math.PI / 2, sitting);
+  p.legL.kn.rotation.x = lerp(Math.max(0, -s) * 0.7 + 0.04 * amp, Math.PI / 2, sitting);
+  p.legR.kn.rotation.x = lerp(Math.max(0, s) * 0.7 + 0.04 * amp, Math.PI / 2, sitting);
+  const typing = Math.sin(performance.now() / 260 + p.phase) * 0.03 * (reduced ? 0 : 1);
+  p.armL.sh.rotation.x = lerp(-s * 0.4, -0.42 + typing, sitting);
+  p.armR.sh.rotation.x = lerp(s * 0.4, -0.42 - typing, sitting);
+  p.armL.el.rotation.x = lerp(-0.12, -1.0, sitting);
+  p.armR.el.rotation.x = lerp(-0.12, -1.0, sitting);
+  p.armL.sh.rotation.z = lerp(0.06, 0.12, sitting); p.armR.sh.rotation.z = lerp(-0.06, -0.12, sitting);
+  p.head.rotation.y = p.look;
+}
+function placeAtDesk(p, deskId) {
+  const d = deskById[deskId];
+  p.desk = deskId; p.root.position.set(d.x, 0, d.cz + (d.row ? 0.06 : -0.06)); p.root.rotation.y = d.face; p.w = 0; p.walking = false;
+}
+
+/* team marks (shape + colour, never fills) + digital markers */
+function markGeo(shape) {
+  const s = new THREE.Shape(), h = new THREE.Path();
+  const ring = (pts, k) => { pts.forEach(([x, y], i) => (i ? s.lineTo(x, y) : s.moveTo(x, y))); s.closePath(); [...pts].reverse().forEach(([x, y], i) => (i ? h.lineTo(x * k, y * k) : h.moveTo(x * k, y * k))); h.closePath(); };
+  if (shape === 'circle') { s.absarc(0, 0, 0.52, 0, Math.PI * 2, false); h.absarc(0, 0, 0.38, 0, Math.PI * 2, true); }
+  if (shape === 'square') ring([[-0.48, -0.48], [0.48, -0.48], [0.48, 0.48], [-0.48, 0.48]], 0.7);
+  if (shape === 'diamond') ring([[0, -0.62], [0.62, 0], [0, 0.62], [-0.62, 0]], 0.68);
+  if (shape === 'triangle') ring([[0, 0.66], [-0.6, -0.42], [0.6, -0.42]], 0.6);
+  s.holes.push(h);
+  return new THREE.ShapeGeometry(s, 24);
+}
+const MARKGEO = Object.fromEntries(Object.entries(TEAMS).map(([k, t]) => [k, markGeo(t.shape)]));
+const ringGeo = new THREE.RingGeometry(0.3, 0.4, 32);
+const coreGeo = new THREE.SphereGeometry(0.17, 16, 12);
+const beamGeo = new THREE.CylinderGeometry(0.025, 0.025, 1.4, 6);
+people.forEach((p) => {
+  const tm = new THREE.MeshBasicMaterial({ color: lin(TEAMS[p.team].c), transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide });
+  const tr = new THREE.Mesh(MARKGEO[p.team], tm); tr.rotation.x = -Math.PI / 2; tr.position.y = 0.035; scene.add(tr);
+  const g = new THREE.Group(); scene.add(g);
+  const ringM = dmat(P.white, 1, { side: THREE.DoubleSide }); const ring = new THREE.Mesh(ringGeo, ringM); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.1; g.add(ring);
+  const coreM = dmat(P.white, 1); const core = new THREE.Mesh(coreGeo, coreM); core.position.y = 1.45; g.add(core);
+  const beamM = dmat(P.cyan, 0.55); const beam = new THREE.Mesh(beamGeo, beamM); beam.position.y = 0.75; g.add(beam);
+  p.marker = { g, ringM, coreM, tr, tm };
+  p.vis = 1; p.present = true;
+});
+
+/* ============================================================ DATA from the paper (Section 4, Table 3, Figure 1) */
+const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+const ATT_PAPER = [21, 21, 18, 17, 21]; // our own count from Table 3, as on slide 10
+const SEP = [1, 18]; // I = {(1, 18)}
+// Per-person remote days: illustrative assignment (≤ 2 each) that reproduces the daily totals above.
+const SCHED = {};
+(() => {
+  const need = ATT_PAPER.map((a) => people.length - a); // 4, 4, 7, 8, 4 → 27 remote days
+  const left = [...need];
+  people.forEach((p, i) => {
+    const k = i < 12 ? 2 : i < 15 ? 1 : 0; const off = [];
+    for (let j = 0; j < k; j++) {
+      const ord = [0, 1, 2, 3, 4].filter((d) => !off.includes(d)).sort((a, b) => left[b] - left[a] || ((a + i) % 5) - ((b + i) % 5));
+      if (left[ord[0]] > 0) { off.push(ord[0]); left[ord[0]]--; }
+    }
+    SCHED[p.num] = [0, 1, 2, 3, 4].map((d) => !off.includes(d));
+  });
+  for (let d = 0; d < 5; d++) for (const p of people) { if (left[d] <= 0) break; const s = SCHED[p.num]; if (s[d] && s.filter((x) => !x).length < 2) { s[d] = false; left[d]--; } }
+})();
+const ATT = [0, 1, 2, 3, 4].map((d) => people.filter((p) => SCHED[p.num][d]).length);
+// Figure 1: people of each team per room (A, B, C, D)
+const FIG1 = {
+  l1: { R1: [1, 3, 1, 0], R2: [0, 1, 1, 2], R3: [2, 2, 1, 1], R4: [1, 1, 2, 1], R5: [1, 2, 1, 1] },
+  l05: { R1: [1, 4, 0, 0], R2: [0, 4, 0, 1], R3: [0, 1, 1, 4], R4: [4, 0, 0, 0], R5: [0, 0, 5, 0] },
+  l0: { R1: [5, 0, 0, 0], R2: [0, 0, 0, 0], R3: [0, 9, 0, 0], R4: [0, 0, 0, 5], R5: [0, 0, 6, 0] },
+};
+function seatsFromRooms(roomOf) { const used = {}; const out = {}; for (const p of people) { const r = roomOf[p.num]; used[r] = (used[r] || 0) + 1; out[p.num] = `${r}-${used[r]}`; } return out; }
+function fromCounts(tbl) {
+  const lists = Object.fromEntries(Object.keys(TEAMS).map((t) => [t, people.filter((p) => p.team === t).map((p) => p.num)]));
+  const m = {};
+  ROOMS.forEach((r) => tbl[r.id].forEach((n, ti) => { const t = 'ABCD'[ti]; for (let k = 0; k < n; k++) m[lists[t].shift()] = r.id; }));
+  return seatsFromRooms(m);
+}
+const ARR = { l1: fromCounts(FIG1.l1), l05: fromCounts(FIG1.l05), l0: fromCounts(FIG1.l0) };
+// Illustrations of the two simple rules the paper compares against (Section 4.1, qualitative)
+ARR.ffd = (() => { const order = [...people].sort((a, b) => SCHED[b.num].filter(Boolean).length - SCHED[a.num].filter(Boolean).length || a.num - b.num); const m = {}; let ri = 0, used = 0; for (const p of order) { if (used >= ROOMS[ri].desks) { ri++; used = 0; } m[p.num] = ROOMS[ri].id; used++; } return seatsFromRooms(m); })();
+ARR.uniform = (() => { const m = {}; people.forEach((p, i) => (m[p.num] = ROOMS[Math.floor(i / 5)].id)); return seatsFromRooms(m); })();
+const roomOf = (seat) => deskById[seat].zone;
+const withTeam = (arr) => people.filter((p) => people.some((q) => q !== p && q.team === p.team && roomOf(arr[q.num]) === roomOf(arr[p.num]))).length;
+
+function route(fromId, toId) {
+  const a = deskById[fromId], b = deskById[toId];
+  const ra = roomById[a.zone], rb = roomById[b.zone];
+  const pts = [[a.x, a.cz], [a.x, a.az]];
+  const ex = exitX(ra), exB = exitX(rb);
+  if (a.zone === b.zone) { if (a.row !== b.row) pts.push([ex, a.az], [ex, b.az]); }
+  else { pts.push([ex, a.az], [ex, doorZ(ra)], [ex, 0]); if (Math.abs(ex - exB) > 0.2) pts.push([exB, 0]); pts.push([exB, doorZ(rb)], [exB, b.az]); }
+  pts.push([b.x, b.az], [b.x, b.cz]);
+  const clean = pts.filter((p, i) => i === 0 || Math.hypot(p[0] - pts[i - 1][0], p[1] - pts[i - 1][1]) > 0.15);
+  return new THREE.CatmullRomCurve3(clean.map(([x, z]) => new THREE.Vector3(x, 0, z)), false, 'centripetal', 0.3);
+}
+const linkMat = new THREE.MeshBasicMaterial({ color: lin(P.lav), transparent: true, opacity: 0, depthWrite: false });
+const sepMat = new THREE.MeshBasicMaterial({ color: lin(P.coral), transparent: true, opacity: 0, depthWrite: false });
+let linkMeshes = [], sepMesh = null;
+function arc(a, b, h, mat, r = 0.055) {
+  const mid = new THREE.Vector3((a.x + b.x) / 2, h + a.distanceTo(b) * 0.1, (a.z + b.z) / 2);
+  const c = new THREE.QuadraticBezierCurve3(new THREE.Vector3(a.x, 1.6, a.z), mid, new THREE.Vector3(b.x, 1.6, b.z));
+  const m = new THREE.Mesh(new THREE.TubeGeometry(c, 48, r, 6, false), mat); scene.add(m); return m;
+}
+function buildTeamLinks() {
+  linkMeshes.forEach((m) => { scene.remove(m); m.geometry.dispose(); }); linkMeshes = [];
+  for (const r of ROOMS) for (const t of Object.keys(TEAMS)) {
+    const g = people.filter((p) => p.present && p.team === t && roomOf(p.desk) === r.id);
+    for (let i = 1; i < g.length; i++) linkMeshes.push(arc(g[0].root.position, g[i].root.position, 1.6, linkMat, 0.045));
+  }
+}
+function buildSep() {
+  if (sepMesh) { scene.remove(sepMesh); sepMesh.geometry.dispose(); }
+  sepMesh = arc(byNum[SEP[0]].root.position, byNum[SEP[1]].root.position, 3.4, sepMat, 0.07);
+}
+
+/* ============================================================ STATE + TWEENS */
+const ST = { dark: 0, twin: 0, halo: 0, teams: 0, links: 0, sep: 0, labels: 0, seat: 0, mint: 0 };
+const VIEW = { tag: 'occ', day: 0, arr: 'l05', mc: 0.8 };
+const CAM = { p: new THREE.Vector3(40, 34, 46), t: new THREE.Vector3(0, 0, 0), fov: 30, shift: 0 };
+const tweens = [];
+function tween(obj, to, dur, ez = ease.io) {
+  return new Promise((resolve) => {
+    for (let i = tweens.length - 1; i >= 0; i--) if (tweens[i].obj === obj && Object.keys(to).some((k) => k in tweens[i].to)) { tweens[i].resolve(); tweens.splice(i, 1); }
+    if (reduced || dur <= 0) { Object.assign(obj, to); resolve(); return; }
+    const from = {}; for (const k in to) from[k] = obj[k];
+    tweens.push({ obj, from, to, start: performance.now(), dur, ez, resolve });
+  });
+}
+let camTw = null;
+function camTo(c, dur, ez = ease.io, arc = 0) {
+  return new Promise((resolve) => {
+    if (camTw) camTw.resolve();
+    const to = { p: new THREE.Vector3(...c.p), t: new THREE.Vector3(...c.t), fov: c.fov ?? 32, shift: c.shift ?? 0 };
+    if (reduced || dur <= 0) { CAM.p.copy(to.p); CAM.t.copy(to.t); CAM.fov = to.fov; CAM.shift = to.shift; camTw = null; resolve(); return; }
+    camTw = { from: { p: CAM.p.clone(), t: CAM.t.clone(), fov: CAM.fov, shift: CAM.shift }, to, start: performance.now(), dur, ez, arc, resolve };
+  });
+}
+const wait = (ms) => new Promise((r) => setTimeout(r, reduced ? 0 : ms));
+
+/* walking: a person follows a curve to a desk, stands and sits */
+const walkers = new Set();
+function walkTo(p, deskId, opts = {}) {
+  return new Promise((resolve) => {
+    if (p.desk === deskId) { resolve(); return; }
+    const curve = opts.curve || route(p.desk, deskId);
+    if (reduced) { placeAtDesk(p, deskId); resolve(); return; }
+    const len = curve.getLength();
+    const dur = (opts.speed ? len / opts.speed : clamp(len / 8.5, 1.3, 3.0)) * 1000;
+    walkers.add({ p, curve, deskId, start: performance.now() + (opts.delay || 0), dur, resolve, onStart: opts.onStart, name: p.name, startRot: p.root.rotation.y, started: false });
+  });
+}
+function walkCurve(p, curve, endRot, speed = 3.2) {
+  return new Promise((resolve) => {
+    if (reduced) { const e = curve.getPoint(1); p.root.position.set(e.x, 0, e.z); p.root.rotation.y = endRot; resolve(); return; }
+    const dur = (curve.getLength() / speed) * 1000;
+    walkers.add({ p, curve, deskId: null, endRot, start: performance.now(), dur, resolve, startRot: p.root.rotation.y, started: false });
+  });
+}
+function angleLerp(a, b, t) { let d = ((b - a + Math.PI) % (Math.PI * 2)) - Math.PI; if (d < -Math.PI) d += Math.PI * 2; return a + d * t; }
+function stepWalkers(now) {
+  for (const w of [...walkers]) {
+    const t0 = now - w.start;
+    if (t0 < 0) continue;
+    if (!w.started) { w.started = true; w.onStart && w.onStart(); }
+    const STAND = 380, SIT = 380;
+    const p = w.p;
+    if (t0 < STAND) { p.w = ease.io(t0 / STAND); p.walking = false; const tan = w.curve.getTangent(0.02); p.root.rotation.y = angleLerp(w.startRot, Math.atan2(tan.x, tan.z), ease.io(t0 / STAND)); continue; }
+    const t1 = t0 - STAND;
+    if (t1 < w.dur) {
+      const u = ease.sine(t1 / w.dur);
+      const pt = w.curve.getPoint(u), tan = w.curve.getTangent(clamp(u, 0.001, 0.999));
+      p.w = 1; p.walking = true; p.root.position.set(pt.x, 0, pt.z);
+      p.root.rotation.y = angleLerp(p.root.rotation.y, Math.atan2(tan.x, tan.z), 0.25);
+      if (w.deskId && u > 0.5 && p.desk !== w.deskId) p.desk = w.deskId; // counts switch mid-way
+      continue;
+    }
+    const t2 = t1 - w.dur;
+    const endRot = w.deskId ? deskById[w.deskId].face : w.endRot;
+    p.walking = false;
+    if (t2 < SIT) { p.root.rotation.y = angleLerp(p.root.rotation.y, endRot, ease.io(t2 / SIT)); if (w.deskId) p.w = 1 - ease.io(t2 / SIT); continue; }
+    if (w.deskId) placeAtDesk(p, w.deskId); else { p.root.rotation.y = endRot; }
+    walkers.delete(w); w.resolve();
+  }
+}
+function setAllocation(alloc) {
+  for (const w of walkers) w.resolve(); walkers.clear();
+  people.forEach((p) => placeAtDesk(p, alloc[p.name]));
+}
+function setDay(d, animate = true) {
+  VIEW.day = d;
+  for (const p of people) { p.present = SCHED[p.num][d]; if (!animate || reduced) p.vis = p.present ? 1 : 0; }
+  document.querySelectorAll('[data-day]').forEach((b) => b.setAttribute('aria-pressed', String(+b.dataset.day === d)));
+}
+function setArrangement(name, animate = true, speed) {
+  VIEW.arr = name; const arr = ARR[name];
+  for (const w of walkers) w.resolve(); walkers.clear();
+  const movers = people.filter((p) => p.desk !== arr[p.num]);
+  // two people can swap desks: free the target first by placing absent movers immediately
+  if (!animate || reduced) { movers.forEach((p) => placeAtDesk(p, arr[p.num])); return Promise.resolve(); }
+  return Promise.all(movers.map((p, i) => (p.present ? walkTo(p, arr[p.num], { delay: i * 55, speed }) : (placeAtDesk(p, arr[p.num]), Promise.resolve()))));
+}
+function occupancy() { const c = Object.fromEntries(ROOMS.map((r) => [r.id, 0])); people.forEach((p) => { if (p.present) c[roomOf(p.desk)]++; }); return c; }
+function assigned() { const c = Object.fromEntries(ROOMS.map((r) => [r.id, 0])); people.forEach((p) => c[roomOf(ARR[VIEW.arr][p.num])]++); return c; }
+const capOf = (r, mc) => Math.floor(mc * r.desks + 1e-9);
+const feasible = (mc) => ROOMS.reduce((s, r) => s + capOf(r, mc), 0) >= Math.max(...ATT);
+
+/* ============================================================ LABELS */
+const labelLayer = document.getElementById('labels');
+const roomTags = ROOMS.map((r) => { const el = document.createElement('div'); el.className = 'tag3d'; el.style.opacity = 0; labelLayer.appendChild(el); return { r, el, last: '' }; });
+const personTags = [];
+function personTag(p, key) { const el = document.createElement('div'); el.className = 'tag3d'; el.innerHTML = `<span><b>Person ${p.num}</b> · ${TEAMS[p.team].name}</span>`; el.style.opacity = 0; labelLayer.appendChild(el); const t = { p, el, key, show: 0 }; personTags.push(t); return t; }
+personTag(byNum[1], 'p1'); personTag(byNum[18], 'sep'); personTag(byNum[1], 'sep');
+const TAGSHOW = { p1: 0, sep: 0 };
+const vtmp = new THREE.Vector3();
+function project(v) { vtmp.copy(v).project(camera); return { x: (vtmp.x * 0.5 + 0.5) * innerWidth, y: (-vtmp.y * 0.5 + 0.5) * innerHeight, ok: vtmp.z < 1 }; }
+const chip = (t, c) => `<span class="st" style="background:${c}">${t}</span>`;
+function roomTagHTML(r, occ, asg) {
+  const n = occ[r.id], m = VIEW.tag;
+  if (m === 'desks') return `<span>${r.name} · ${r.desks} desks</span>`;
+  if (m === 'u') { const p1 = byNum[1]; const v = p1.present && roomOf(p1.desk) === r.id ? 1 : 0; return `<span>${r.name}</span><span class="u" style="background:${v ? P.cyan : 'rgba(255,255,255,.14)'};color:${v ? P.navy : 'inherit'}">${v ? 'Yes = 1' : 'No = 0'}</span>`; }
+  if (m === 'z') { const mx = Math.max(...ROOMS.map((q) => occ[q.id] / q.desks)); const v = n / r.desks; return `<span>${r.name} · ${Math.round(v * 100)}% full</span>${Math.abs(v - mx) < 1e-9 && n ? chip('busiest', P.cyan) : ''}`; }
+  if (m === 'cap') {
+    const sw = feasible(VIEW.mc), lim = sw ? capOf(r, VIEW.mc) : r.desks;
+    return `<span>${r.name} · ${n} of max ${lim}</span>${n > lim ? chip('too full', P.coral) : chip(sw ? `${Math.round(VIEW.mc * 100)}% limit` : 'whole room', sw ? P.mint : P.amber)}`;
+  }
+  if (m === 'assigned') { const a = asg[r.id]; return `<span>${r.name} · ${a} / ${r.desks}</span>${a === 0 ? chip('empty', P.amber) : ''}`; }
+  return `<span>${r.name} · ${n} / ${r.desks}</span>${asg[r.id] === 0 ? chip('empty', P.amber) : ''}`;
+}
+let PR = [], dtLabel = 0.016;
+const hiddenBy = (s) => PR.some((r) => s.x > r.left - 20 && s.x < r.right + 20 && s.y > r.top - 10 && s.y < r.bottom + 40);
+function updateLabels(occ, asg) {
+  PR = !panelEl || !panelEl.classList.contains('in') ? [] : panelEl.classList.contains('band') ? [...panelEl.children].map((c) => c.getBoundingClientRect()) : [panelEl.getBoundingClientRect()];
+  for (const t of roomTags) {
+    const html = roomTagHTML(t.r, occ, asg);
+    if (html !== t.last) { t.el.innerHTML = html; t.last = html; }
+    const s = project(new THREE.Vector3(t.r.cx - 1, 0.2, t.r.cz - 3.8));
+    t.el.style.transform = `translate(${s.x}px, ${s.y}px) translate(-50%, -100%)`;
+    t.el.style.opacity = s.ok && !hiddenBy(s) ? ST.labels : 0;
+  }
+  for (const t of personTags) {
+    const target = (TAGSHOW[t.key] || 0) * (t.p.present ? 1 : 0);
+    t.show += (target - t.show) * Math.min(1, dtLabel * 6);
+    const pos = t.p.root.position.clone(); pos.y = t.p.w < 0.5 ? 1.6 : 2.15;
+    const s = project(pos);
+    t.el.style.transform = `translate(${s.x}px, ${s.y}px) translate(-50%, -100%)`;
+    t.el.style.opacity = s.ok && !hiddenBy(s) ? t.show : 0;
+  }
+}
+
+/* ============================================================ RENDER LOOP */
+const BG_MINT = lin('#DDF5EB');
+let last = performance.now();
+let idle = { on: false, t0: 0 };
+let panelEl = null;
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  for (let i = tweens.length - 1; i >= 0; i--) {
+    const tw = tweens[i]; const k = clamp((now - tw.start) / tw.dur, 0, 1); const e = tw.ez(k);
+    for (const key in tw.to) tw.obj[key] = lerp(tw.from[key], tw.to[key], e);
+    if (k >= 1) { tweens.splice(i, 1); tw.resolve(); }
+  }
+  if (camTw) {
+    const k = clamp((now - camTw.start) / camTw.dur, 0, 1); const e = camTw.ez(k);
+    CAM.p.lerpVectors(camTw.from.p, camTw.to.p, e); CAM.t.lerpVectors(camTw.from.t, camTw.to.t, e);
+    if (camTw.arc) CAM.p.y += Math.sin(Math.PI * e) * camTw.arc;
+    CAM.fov = lerp(camTw.from.fov, camTw.to.fov, e); CAM.shift = lerp(camTw.from.shift, camTw.to.shift, e);
+    if (k >= 1) { const r = camTw.resolve; camTw = null; r(); }
+  }
+  stepWalkers(now);
+  const narrow = innerWidth < 860;
+  let px = CAM.p.x, py = CAM.p.y, pz = CAM.p.z;
+  if (idle.on && !reduced && !camTw) { const a = Math.sin((now - idle.t0) / 9000) * 0.06; const dx = px - CAM.t.x, dz = pz - CAM.t.z; px = CAM.t.x + dx * Math.cos(a) - dz * Math.sin(a); pz = CAM.t.z + dx * Math.sin(a) + dz * Math.cos(a); }
+  if (narrow) { const k = 1.3; px = CAM.t.x + (px - CAM.t.x) * k; py = CAM.t.y + (py - CAM.t.y) * k; pz = CAM.t.z + (pz - CAM.t.z) * k; }
+  camera.position.set(px, py, pz); camera.lookAt(CAM.t); camera.fov = CAM.fov;
+  const sh = narrow ? 0 : CAM.shift;
+  if (Math.abs(sh) > 1e-4) camera.setViewOffset(innerWidth, innerHeight, -sh * innerWidth, 0, innerWidth, innerHeight); else camera.clearViewOffset();
+  camera.updateProjectionMatrix();
+  scene.background.copy(BG_LIGHT).lerp(BG_DARK, ST.dark).lerp(BG_MINT, ST.mint); scene.fog.color.copy(scene.background);
+  floorMat.color.copy(FLOOR_LIGHT).lerp(FLOOR_DARK, Math.max(ST.twin, ST.dark * 0.15));
+  hemi.intensity = lerp(0.95, 0.42, ST.dark); sun.intensity = lerp(1.45, 0.55, ST.dark) * (1 - ST.twin * 0.4);
+  sun.color.copy(lin('#FFF3E2')).lerp(lin('#9FB6E8'), ST.dark); glow.intensity = ST.twin * 1.4;
+  renderer.toneMappingExposure = lerp(1.0, 1.08, ST.dark);
+  const lampFade = 1 - clamp((camera.position.y - 14) / 10, 0, 1);
+  for (const pm of physMats) {
+    let o = pm.base * (1 - ST.twin * pm.k); if (pm.lamp) o *= lampFade;
+    pm.m.opacity = o; const t = o < 0.995; if (pm.m.transparent !== t) { pm.m.transparent = t; pm.m.needsUpdate = true; } pm.m.depthWrite = o > 0.5;
+    if (pm.screen) pm.m.emissiveIntensity = 0.12 + ST.dark * 0.9;
+    if (pm.lamp && pm.m.emissive) pm.m.emissiveIntensity = 1.2 + ST.dark * 1.4;
+  }
+  for (const dm of digiMats) dm.m.opacity = dm.base * ST.twin;
+  for (const p of people) {
+    const target = p.present ? 1 : 0;
+    p.vis += (target - p.vis) * (reduced ? 1 : Math.min(1, dt * 7));
+    if (Math.abs(p.vis - target) < 0.01) p.vis = target;
+    const v = Math.max(0.0001, p.vis);
+    p.root.scale.setScalar(v); p.root.visible = p.vis > 0.01;
+    p.marker.g.position.set(p.root.position.x, 0, p.root.position.z); p.marker.g.scale.setScalar(v); p.marker.g.visible = p.vis > 0.01;
+    p.marker.tr.position.set(p.root.position.x, 0.035, p.root.position.z); p.marker.tr.scale.setScalar(v);
+    p.marker.tm.opacity = ST.teams * p.vis;
+    const hl = ST.seat > 0 && p.num === 1;
+    const col = hl ? P.cyan : ST.teams > 0.5 ? TEAMS[p.team].c : P.white;
+    p.marker.ringM.color.copy(lin(col)); p.marker.coreM.color.copy(lin(hl ? P.cyan : P.white));
+  }
+  const occ = occupancy(), asg = assigned();
+  const occSeats = new Set(people.filter((p) => p.present).map((p) => p.desk));
+  const s1 = byNum[1].desk;
+  for (const d of DESKS) {
+    const t = tiles[d.id]; const hl = ST.seat > 0 && d.id === s1;
+    t.mFree.color.copy(lin(hl ? P.teal : occSeats.has(d.id) ? P.blue : '#3B4A61')); t.mEdge.color.copy(lin(hl ? P.cyan : occSeats.has(d.id) ? P.blue : '#5B6B82'));
+  }
+  for (const r of ROOMS) {
+    const n = occ[r.id]; let col = null, a = 0;
+    if (VIEW.tag === 'cap') { const sw = feasible(VIEW.mc), lim = sw ? capOf(r, VIEW.mc) : r.desks; col = n > lim ? P.coral : sw ? P.mint : P.amber2 || '#F2B84B'; a = 0.85; }
+    else if (asg[r.id] === 0) { col = '#F2B84B'; a = 1; }
+    if (col) halos[r.id].color.copy(lin(col));
+    halos[r.id].opacity = ST.halo * a * (ST.dark > 0.5 ? 0.9 : 0.8);
+  }
+  linkMat.opacity = ST.links; sepMat.opacity = ST.sep;
+  dtLabel = dt; updateLabels(occ, asg);
+  for (const p of people) if (p.root.visible) pose(p, dt);
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+
+/* ============================================================ SLIDES (content: contenido-diapositivas Final.md) */
+const svgMark = (t, s = 13) => {
+  const c = TEAMS[t].c, sh = TEAMS[t].shape;
+  const inner = sh === 'square' ? `<rect x="2" y="2" width="9" height="9" fill="${c}"/>` : sh === 'circle' ? `<circle cx="6.5" cy="6.5" r="5" fill="${c}"/>` : sh === 'diamond' ? `<path d="M6.5 0.5 12.5 6.5 6.5 12.5 0.5 6.5z" fill="${c}"/>` : `<path d="M6.5 1 12.5 12 0.5 12z" fill="${c}"/>`;
+  return `<svg class="mk" width="${s}" height="${s}" viewBox="0 0 13 13" aria-hidden="true">${inner}</svg>`;
+};
+const teamLegend = `<div class="legend">${Object.keys(TEAMS).map((t) => `<span>${svgMark(t)}${TEAMS[t].name}</span>`).join('')}<span><i class="mk" style="background:repeating-linear-gradient(45deg,#CBD5E1 0 2px,transparent 2px 4px);border:1px solid #CBD5E1;border-radius:2px"></i>Empty desk</span></div>`;
+const arrow = '<span class="arrow" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h15M13 6l6 6-6 6"/></svg></span>';
+const T4 = [[1.0, .48, 13, .41, 416, 197], [0.9, .49, 21, .27, 459, 2245], [0.8, .49, 21, .26, 457, 2251], [0.7, .49, 21, .28, 495, 2336], [0.6, .49, 21, 1.31, 2631, 2297], [0.5, .49, 21, 4.21, 6778, 2262], [0.4, .49, 21, 6.55, 10338, 2251], [0.3, .49, 21, 7.21, 11127, 2692], [0.2, .49, 21, 15.56, 20435, 2445], [0.1, .49, 21, 22.10, 29018, 2255], [0.0, .50, 25, .59, 1374, 2367]];
+const allocCol = (key, title, sub, hl) => `<button data-arr="${key}" class="${hl ? 'hl' : ''}" aria-pressed="false"><h3>${title}</h3><span class="s">${sub}</span>${ROOMS.map((r) => {
+  const cnt = FIG1[key][r.id]; const tot = cnt.reduce((a, b) => a + b, 0);
+  const marks = cnt.flatMap((n, ti) => Array(n).fill(svgMark('ABCD'[ti]))).join('') + Array(r.desks - tot).fill('<i class="e"></i>').join('');
+  return `<div class="room"><b>Room ${r.n}</b><span class="seats">${marks}</span><span class="r ${tot ? '' : 'amb'}">${tot ? `${tot} / ${r.desks}` : 'empty'}</span></div>`;
+}).join('')}</button>`;
+const ST0 = { dark: 0, twin: 0, halo: 0, teams: 0, links: 0, sep: 0, labels: 0, seat: 0, mint: 0 };
+const S = (o) => ({ ...ST0, ...o });
+const p1Room = roomById[roomOf(ARR.l05[1])];
+const p1Other = ROOMS.find((r) => r.id !== p1Room.id && r.n === 2) || ROOMS.find((r) => r.id !== p1Room.id);
+const SLIDES = [
+  { id: 'cover', theme: 'dark', layout: 'cover', cam: { p: [36, 28, 40], t: [-2, -2, 0], fov: 30, shift: -0.18 }, st: S({ dark: 1 }), view: { arr: 'l05', day: 0, tag: 'occ' }, dur: 1600, idle: true, foot: '',
+    html: `<span class="eyebrow">Binary programming · Research</span><h1>Assigning people to rooms and desks</h1><p class="lead" style="font-size:clamp(16px,1.45vw,26px);color:#fff">A model that balances <span class="cy">how full the rooms are</span> and <span class="cy">keeping teams together</span></p><p class="lead" style="color:#fff;font-weight:600">Presented by Juan José Gómez</p><p class="small muted">Olivieri, Mangini and Fanti · Computers &amp; Industrial Engineering 212 (2026) 111724 · Polytechnic University of Bari</p>` },
+  { id: 'problem', theme: 'light', layout: 'left', cam: { p: [22, 30, 33], t: [-1, -1.5, 0.5], fov: 34, shift: 0.24 }, st: S({ halo: 1, teams: 1, labels: 1 }), view: { arr: 'l0', day: 3, tag: 'occ' }, dur: 2200, arc: 5,
+    foot: 'Paper sections 1 and 3.1',
+    html: `<span class="eyebrow">01 · The problem</span><h2>With hybrid work, attendance changes every day</h2>
+      <button class="card" data-demo="rigid" aria-pressed="true"><span class="k">Easy option 1</span><h3>Each team gets its own room</h3><p>On quiet days the room sits half empty and space is wasted.</p></button>
+      <button class="card" data-demo="volatile" aria-pressed="false"><span class="k">Easy option 2</span><h3>Move people to a new desk every day</h3><p>People work worse without a stable place to sit.</p></button>
+      <button class="card hl" data-demo="paper" aria-pressed="false"><span class="k">What the paper solves</span><h3>Who sits where, every day of the week</h3><p>Choose a room and a desk for each person, for each day. One person per desk.</p></button>
+      <p class="small">Select a card to see it in the office.</p>` },
+  { id: 'requirements', theme: 'light', layout: 'band', cam: { p: [14, 33, 22], t: [0, -2.5, -2.5], fov: 36, shift: 0 }, st: S({ teams: 1 }), view: { arr: 'l05', day: 0, tag: 'occ' }, dur: 1800,
+    foot: 'Paper section 1',
+    html: `<div class="head"><span class="eyebrow">02 · What the model must respect</span><h2>Five things the seating plan must take into account</h2><div class="legend"><span><i class="sq-hard"></i>Must always happen</span><span><i class="sq-pref"></i>Nice to have: the model tries its best</span></div></div>
+      <div class="cols c5">
+        <button class="card pref" data-req="1"><span class="k">Nice to have</span><h3>Teams together</h3><p>People from the same team should share a room.</p></button>
+        <button class="card hard" data-req="2"><span class="k">Must</span><h3>Some people apart</h3><p>Certain pairs never share a room on the same day.</p></button>
+        <button class="card hard" data-req="3"><span class="k">Must</span><h3>Respect home days</h3><p>Each person chooses their home days; only people in the office get a desk.</p></button>
+        <button class="card hard" data-req="4"><span class="k">Must</span><h3>Same desk all week</h3><p>Each person always uses the same desk.</p></button>
+        <button class="card hard" data-req="5"><span class="k">Must</span><h3>Rooms not too full</h3><p>Use at most 80% of each room. If that is impossible, use the whole room.</p></button>
+      </div>` },
+  { id: 'binary', theme: 'dark', layout: 'left', cam: { p: [-2, 46, 24], t: [-2, -3, 0.5], fov: 38, shift: 0.22 }, st: S({ dark: 1, twin: 1, labels: 1, seat: 1 }), view: { arr: 'l05', day: 0, tag: 'u' }, dur: 2200, arc: 6, tags: { p1: 1 },
+    foot: 'Paper section 3.2',
+    html: `<span class="eyebrow">03 · Binary programming</span><h2>Every decision is a yes-or-no question</h2>
+      <div class="ex"><div><span>Is Person 1 in ${p1Other.name} on Monday?</span><b>No = 0</b></div><div class="one"><span>Is Person 1 in ${p1Room.name} on Monday?</span><b>Yes = 1</b></div></div>
+      <p class="lead">“Binary” means each answer can only be 1 (yes) or 0 (no). Nobody can be “half” in a room.</p>
+      <div class="cols c3"><div class="card"><h3>1 · Decisions</h3><p>The yes-or-no questions.</p></div><div class="card"><h3>2 · A goal</h3><p>What counts as the best plan.</p></div><div class="card"><h3>3 · Rules</h3><p>What can never happen.</p></div></div>
+      <p class="small">A program called a solver tries the combinations in a smart way and returns the best plan.</p>` },
+  { id: 'decides', theme: 'light', layout: 'left', cam: { p: [-6, 30, 18], t: [-7, -2, -1], fov: 38, shift: 0.24 }, st: S({ twin: 0.75, dark: 0.15, teams: 1, labels: 1, seat: 1 }), view: { arr: 'l05', day: 0, tag: 'u' }, dur: 1800, tags: { p1: 1 },
+    foot: 'Paper sections 3.2 and 3.3',
+    html: `<span class="eyebrow">04 · What the model decides</span><h2>A room and a desk for each person, each day</h2>
+      <ul class="numlist" id="dec">
+        <li><button class="card" data-v="u" aria-pressed="true" style="width:100%"><span style="display:flex;gap:12px"><span class="n" style="width:26px;height:26px;border-radius:6px;display:grid;place-items:center;background:var(--blue);color:#fff;font-weight:800">1</span><span><b>Which room</b> each person uses each day.</span></span></button></li>
+        <li><button class="card" data-v="v" aria-pressed="false" style="width:100%"><span style="display:flex;gap:12px"><span style="width:26px;height:26px;border-radius:6px;display:grid;place-items:center;background:var(--blue);color:#fff;font-weight:800">2</span><span><b>Which desk</b> inside that room.</span></span></button></li>
+        <li><button class="card" data-v="y" aria-pressed="false" style="width:100%"><span style="display:flex;gap:12px"><span style="width:26px;height:26px;border-radius:6px;display:grid;place-items:center;background:var(--blue);color:#fff;font-weight:800">3</span><span><b>Which teammates</b> end up in the same room. <span class="muted">(called y in the formula)</span></span></span></button></li>
+        <li><button class="card" data-v="z" aria-pressed="false" style="width:100%"><span style="display:flex;gap:12px"><span style="width:26px;height:26px;border-radius:6px;display:grid;place-items:center;background:var(--teal);color:#fff;font-weight:800">+</span><span><b>How full the busiest room</b> gets during the week. <span class="muted">(called z in the formula)</span></span></span></button></li>
+      </ul>
+      <p class="small">The first three are yes-or-no answers. The last one is a percentage. Select one to see it in the office.</p>` },
+  { id: 'goals', theme: 'dark', layout: 'band', cam: { p: [4, 40, 26], t: [0, -3, -1], fov: 38, shift: 0 }, st: S({ dark: 1, twin: 1, teams: 1, links: 1, labels: 1 }), view: { arr: 'l05', day: 0, tag: 'z' }, dur: 2000, arc: 5,
+    foot: 'Paper sections 1 and 3.5',
+    html: `<div class="head"><span class="eyebrow">05 · The goal</span><h2>Two goals that pull in opposite directions</h2><p class="lead" style="color:#fff">The model gives each plan a score and keeps the plan with the <b>lowest</b> score: <span class="cy">less crowding</span> lowers it, <span style="color:var(--lav)">teammates together</span> lowers it too. The next slide shows the formula.</p></div>
+      <div class="cols c3" style="align-items:end">
+        <div class="card"><span class="k cy" style="font-style:normal">Goal 1</span><h3>Less crowding</h3><p>Keep the busiest room as empty as possible, so no room is packed.</p></div>
+        <div style="display:flex;flex-direction:column;gap:8px;align-items:center"><div class="lam" style="font-size:clamp(64px,7vw,130px)">λ</div><p class="small muted" style="text-align:center">The balance dial, from 0 to 1, decides which goal matters more.</p>
+          <div class="slider" style="width:100%"><label for="lam"><span>Dial</span><output id="lamout">0.5</output></label><input type="range" id="lam" min="0" max="1" step="0.1" value="0.5"><div class="ends"><span>0 · only teams</span><span>1 · only crowding</span></div><span class="small muted" id="lamnote"></span></div></div>
+        <div class="card"><span class="k" style="font-style:normal;color:var(--lav)">Goal 2</span><h3>Teams together</h3><p>Put people from the same team in the same room whenever possible.</p></div>
+      </div>` },
+  { id: 'formula', theme: 'light', layout: 'wide', cam: { p: [22, 34, 26], t: [-7, -2, -1], fov: 36, shift: 0.32 }, st: S({ twin: 0.6, dark: 0.1, teams: 1, links: 1, labels: 1 }), view: { arr: 'l05', day: 0, tag: 'z' }, dur: 1800,
+    foot: 'Paper section 3.5, equation (12)',
+    html: `<span class="eyebrow">06 · The objective function</span><h2>The formula, piece by piece</h2>
+      <div class="formula fx" role="group" aria-label="Objective function">
+        <span data-f="min">min</span>&nbsp; <span data-f="lam">λ</span>·<span data-f="z">z</span> <span data-f="minus">− (1 − λ)</span> · <span data-f="y">Σ y</span> <span data-f="div">/ (N²·S·K)</span>
+        <small>Select a piece of the formula or a card to see what it does.</small>
+      </div>
+      <div class="cols c3" id="fparts">
+        <button class="card" data-f="min"><span class="k">min</span><h3>Look for the lowest score</h3><p>The model compares plans and keeps the one with the smallest number.</p></button>
+        <button class="card" data-f="z"><span class="k">z</span><h3>How full the busiest room gets</h3><p>People in a room divided by its desks, for the worst room and day. <b style="color:var(--teal)">Looks for:</b> keeping it low, so no room is packed.</p></button>
+        <button class="card" data-f="lam"><span class="k">λ</span><h3>The balance dial (0 to 1)</h3><p>How much less crowding matters. <b style="color:var(--teal)">At 1:</b> only crowding counts. <b style="color:var(--teal)">At 0:</b> only teams count.</p></button>
+        <button class="card" data-f="y"><span class="k">Σ y</span><h3>Teammates sitting together</h3><p>Counts every pair of teammates in the same room, added over all rooms and days. <b style="color:var(--teal)">Looks for:</b> as many as possible.</p></button>
+        <button class="card" data-f="minus"><span class="k">− (1 − λ)</span><h3>The minus sign and its weight</h3><p>Because the model looks for the lowest score, subtracting teammates means more teams together = lower score = better. (1 − λ) is how much this goal weighs.</p></button>
+        <button class="card" data-f="div"><span class="k">÷ (N²·S·K)</span><h3>A scale fix</h3><p>Divides by people × people × rooms × days so the team part stays between 0 and 1, like the crowding part. It only makes both goals comparable.</p></button>
+      </div>` },
+  { id: 'rules', theme: 'light', layout: 'wide', cam: { p: [26, 34, 26], t: [-6, -2, -1], fov: 36, shift: 0.32 }, st: S({ mint: 0.35, halo: 1, labels: 1 }), view: { arr: 'l05', day: 0, tag: 'cap' }, dur: 1800,
+    foot: 'Paper section 3.4',
+    html: `<span class="eyebrow">07 · The rules</span><h2>Rules the model never breaks</h2>
+      <div class="cols c3">
+        <div class="card hard"><h3>One room at a time</h3><p>Each person is in at most one room per day, and in none on home days.</p></div>
+        <div class="card hard"><h3>One person per desk</h3><p>Two people never share a desk on the same day.</p></div>
+        <div class="card hard"><h3>Everyone in gets a desk</h3><p>Whoever comes to the office gets exactly one desk.</p></div>
+        <div class="card hard"><h3>Same desk every day</h3><p>Each person keeps their desk all week.</p></div>
+        <div class="card hard"><h3>Rooms don’t overflow</h3><p>No room goes above the limit set by HR (80%).</p></div>
+        <div class="card hard"><h3>Some pairs never meet</h3><p>Marked pairs are never in the same room on the same day.</p></div>
+      </div>
+      <div class="card" style="background:var(--mint);border:0;color:var(--navy)"><span class="k" style="color:var(--navy)">The safety switch</span><h3>If the 80% limit makes it impossible to seat everyone, the model uses the whole room instead. So it always finds an answer.</h3>
+        <div class="sw" id="sw"><span class="swtrack" aria-hidden="true"></span><span><b id="swt"></b><span class="small" id="swd" style="color:var(--ink-2)"></span></span></div>
+        <div class="slider"><label for="mc"><span>Try a stricter limit</span><output id="mcout">80%</output></label><input type="range" id="mc" min="0.1" max="1" step="0.05" value="0.8"></div></div>` },
+  { id: 'case', theme: 'light', layout: 'right', cam: { p: [-22, 31, 33], t: [3, -1.5, 0.5], fov: 34, shift: -0.25 }, st: S({ teams: 1, labels: 1, sep: 1 }), view: { arr: 'l05', day: 0, tag: 'desks' }, dur: 2000, arc: 5, tags: { sep: 1 },
+    foot: 'Paper section 4 and Table 3',
+    html: `<span class="eyebrow">08 · The real case</span><h2>An office of an Italian ministry</h2>
+      <div class="cols c4"><div class="card"><span class="big">25</span><p>people in 4 teams</p></div><div class="card"><span class="big">5</span><p>rooms with 8, 7, 10, 8 and 7 desks</p></div><div class="card"><span class="big">40</span><p>desks in total</p></div><div class="card"><span class="big">80%</span><p>maximum use of each room</p></div></div>
+      <ul class="bul"><li>Each person works from home up to 2 days a week.</li><li>Persons 1 and 18 must never share a room (line in coral).</li></ul>
+      <div class="card"><span class="k">People in the office each day (of 25) · select a day</span><div class="bars" style="height:120px">${DAYS.map((d, i) => `<button data-day="${i}" aria-pressed="${i === 0}" aria-label="${d}: ${ATT_PAPER[i]} of 25"><span class="v" style="font-size:15px">${ATT_PAPER[i]}</span><span class="lane"><span class="fill" style="height:${(ATT_PAPER[i] / 25) * 100}%"></span></span><span class="d">${d}</span></button>`).join('')}</div></div>
+      ${teamLegend}` },
+  { id: 'solved', theme: 'dark', layout: 'band', cam: { p: [0, 46, 22], t: [0, -3, -2], fov: 38, shift: 0 }, st: S({ dark: 1, twin: 1 }), view: { arr: 'l05', day: 0, tag: 'occ' }, dur: 2200, arc: 6,
+    foot: 'Paper sections 4.1 and 5',
+    html: `<div class="head"><span class="eyebrow">09 · How it is solved</span><h2>From two spreadsheets to the best seating plan</h2></div>
+      <div style="display:flex;flex-direction:column;gap:14px">
+      <div class="steps"><div class="card"><span class="k">Step 1</span><h3>HR fills two Excel sheets: people and their office days; rooms and desks</h3></div>${arrow}<div class="card"><span class="k">Step 2</span><h3>The manager sets the balance dial</h3></div>${arrow}<div class="card"><span class="k">Step 3</span><h3>The computer builds the model and the solver finds the best plan</h3></div>${arrow}<div class="card"><span class="k">Step 4</span><h3>HR gets a seating plan and occupancy charts</h3></div></div>
+      <div class="cols c2"><div class="card topline"><span class="k cy" style="font-style:normal;letter-spacing:.1em">SOLVER</span><p>CPLEX (by IBM): it guarantees the best possible plan, not just a good one.</p></div><div class="card topline"><span class="k cy" style="font-style:normal;letter-spacing:.1em">TESTS</span><p>11 runs, one for each dial setting from 1 down to 0.</p></div></div>
+      </div>` },
+  { id: 'results', theme: 'light', layout: 'wide', cam: { p: [30, 32, 26], t: [-5, -1.5, -0.5], fov: 34, shift: 0.33 }, st: S({ teams: 1, labels: 1, halo: 1 }), view: { arr: 'l05', day: 0, tag: 'assigned' }, dur: 1800,
+    foot: 'Paper Table 4 and Figure 1 · “with their team” = sharing a room with at least one teammate',
+    html: `<span class="eyebrow">10 · Results</span><h2>What happens when you turn the dial</h2>${teamLegend}
+      <div class="alloc">${allocCol('l1', 'Dial at 1 · only less crowding', 'Teams split across 4–5 rooms · 13 of 25 sit with their team', false)}${allocCol('l05', 'Dial at 0.5 · balance (recommended)', 'Teams in 2–3 rooms · 21 of 25 sit with their team', true)}${allocCol('l0', 'Dial at 0 · only teams together', 'One team per room · 25 of 25, but one room stays empty', false)}</div>
+      <p class="small">Each square is a desk: a coloured mark is a person, a striped square is an empty desk. Select a column to see it in the office.</p>` },
+  { id: 'lesson', theme: 'dark', layout: 'left', cam: { p: [6, 38, 26], t: [-3, -2, -1], fov: 38, shift: 0.24 }, st: S({ dark: 1, twin: 0.6, halo: 1, teams: 1, labels: 1 }), view: { arr: 'l0', day: 3, tag: 'assigned' }, dur: 2000,
+    foot: 'Paper section 4.1',
+    html: `<span class="eyebrow">11 · The lesson</span><h2>The extremes are a trap; the middle wins</h2>
+      <button class="card" data-arr="l0" aria-pressed="true"><span class="k chipw" style="font-style:normal">Dial at 0 looks perfect…</span><p>Every team has its own room, but there are 4 teams and 5 rooms, so Room 2 is empty all week. That is wasted space.</p></button>
+      <button class="card" data-arr="l05" aria-pressed="false" style="border-color:var(--teal)"><span class="k cy" style="font-style:normal">…the authors recommend 0.5 or 0.6</span><p>Most people sit with their team and the busiest room gets some relief. 0.6 gives almost the same plan and is faster to compute: 1.3 hours instead of 4.2.</p></button>` },
+  { id: 'conclusions', theme: 'dark', layout: 'left', cam: { p: [40, 18, 44], t: [-4, 0, -1], fov: 28, shift: 0.22 }, st: S({ dark: 0.92, teams: 0.6 }), view: { arr: 'l05', day: 0, tag: 'occ' }, dur: 2400, idle: true,
+    foot: 'Paper sections 5 and 6',
+    html: `<span class="eyebrow">12 · Conclusions</span><h2>Using space well without forgetting people</h2>
+      <div class="card topline"><h3>Simple idea, strong tool</h3><p>Yes-or-no decisions, one goal and a few rules are enough to plan a whole office week.</p></div>
+      <div class="card topline"><h3>The manager stays in control</h3><p>The balance dial lets them choose between less crowding and teams together.</p></div>
+      <div class="card topline"><h3>Better than simple rules</h3><p>Unlike filling rooms one by one, it looks at each person’s office days.</p></div>
+      <div class="card topline"><h3>Ready for HR</h3><p>A web tool: upload two Excel files, get the plan in seconds to minutes. Next step: react to last-minute absences.</p></div>
+      <p class="small muted">Source: G. Olivieri, A. M. Mangini, M. P. Fanti. Optimizing personnel allocation: An integer linear programming problem for enhanced workplace efficiency. Computers &amp; Industrial Engineering 212 (2026) 111724, CC BY 4.0.</p>` },
+];
+
+/* ============================================================ UI */
+const ui = document.getElementById('ui');
+const stageHtml = document.getElementById('stagehtml');
+const scrim = document.getElementById('scrim');
+const bandEl = document.getElementById('band');
+const prog = document.getElementById('prog');
+const counter = document.getElementById('counter');
+const live = document.getElementById('live');
+const orbits = document.getElementById('orbits');
+SLIDES.forEach((s, i) => { const b = document.createElement('button'); b.setAttribute('role', 'tab'); b.setAttribute('aria-label', `Slide ${i + 1}`); b.addEventListener('click', () => go(i)); prog.appendChild(b); });
+let cur = -1, token = 0, demoToken = 0;
+
+function setScrim(s) {
+  const c = s.mint ? '221,245,235' : s.theme === 'dark' ? '20,38,61' : '247,249,252';
+  let bg = 'none';
+  if (s.layout === 'left' || s.layout === 'cover') bg = `linear-gradient(90deg, rgba(${c},.95) 0%, rgba(${c},.85) 36%, rgba(${c},0) 62%)`;
+  if (s.layout === 'wide') bg = `linear-gradient(90deg, rgba(${c},.96) 0%, rgba(${c},.9) 54%, rgba(${c},0) 78%)`;
+  if (s.layout === 'right') bg = `linear-gradient(270deg, rgba(${c},.95) 0%, rgba(${c},.85) 36%, rgba(${c},0) 62%)`;
+  if (s.layout === 'band') bg = `linear-gradient(180deg, rgba(${c},.95) 0%, rgba(${c},.6) 22%, rgba(${c},0) 36%, rgba(${c},0) 52%, rgba(${c},.75) 70%, rgba(${c},.95) 100%)`;
+  if (innerWidth < 860) bg = `linear-gradient(0deg, rgba(${c},.97) 0%, rgba(${c},.92) 58%, rgba(${c},0) 80%)`;
+  scrim.style.background = bg; scrim.style.opacity = 1;
+  bandEl.style.background = `linear-gradient(0deg, rgba(${c},.92) 0%, rgba(${c},.6) 45%, rgba(${c},0) 100%)`;
+}
+const pressGroup = (el, sel, btn) => el.querySelectorAll(sel).forEach((x) => x.setAttribute('aria-pressed', String(x === btn)));
+function wire(s, el) {
+  el.querySelectorAll('[data-day]').forEach((b) => b.addEventListener('click', () => { demoToken++; setDay(+b.dataset.day); }));
+  if (s.id === 'problem') el.querySelectorAll('[data-demo]').forEach((b) => b.addEventListener('click', async () => {
+    pressGroup(el, '[data-demo]', b); const t = ++demoToken; const k = b.dataset.demo;
+    if (k === 'rigid') { VIEW.tag = 'occ'; setDay(3); await setArrangement('l0'); return; }
+    if (k === 'paper') { VIEW.tag = 'desks'; setDay(0); await setArrangement('l05'); return; }
+    VIEW.tag = 'occ'; let seed = 11; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    for (let d = 0; d < 5 && t === demoToken; d++) {
+      setDay(d); const seats = [...DESKS].sort(() => rnd() - 0.5).map((x) => x.id); ARR.shuffle = {}; people.forEach((p, i) => (ARR.shuffle[p.num] = seats[i]));
+      await setArrangement('shuffle', true, 12); await wait(500);
+    }
+  }));
+  if (s.id === 'requirements') el.querySelectorAll('[data-req]').forEach((b) => b.addEventListener('click', async () => {
+    pressGroup(el, '[data-req]', b); const t = ++demoToken; const k = +b.dataset.req;
+    TAGSHOW.sep = k === 2 ? 1 : 0; VIEW.tag = k === 5 ? 'cap' : 'occ'; VIEW.mc = 0.8;
+    if (k === 1) buildTeamLinks(); if (k === 2) buildSep();
+    tween(ST, { links: k === 1 ? 1 : 0, sep: k === 2 ? 1 : 0, halo: k === 5 ? 1 : 0, labels: k >= 3 ? 1 : 0 }, 500);
+    if (k === 3 || k === 4) for (let d = 0; d < 5 && t === demoToken; d++) { setDay(d); await wait(1300); }
+  }));
+  if (s.id === 'goals') {
+    const r = el.querySelector('#lam'), out = el.querySelector('#lamout'), note = el.querySelector('#lamnote');
+    const upd = (anim) => { const l = +r.value; out.textContent = l.toFixed(1); const k = l >= 0.95 ? 'l1' : l <= 0.05 ? 'l0' : 'l05'; note.textContent = `The office shows the paper’s plan for the dial at ${k === 'l1' ? '1' : k === 'l0' ? '0' : '0.5'}: ${withTeam(ARR[k])} of 25 sit with their team.`; if (k !== VIEW.arr) setArrangement(k, anim).then(() => cur >= 0 && SLIDES[cur].id === 'goals' && buildTeamLinks()); };
+    r.addEventListener('input', () => upd(true)); upd(false); buildTeamLinks();
+  }
+  if (s.id === 'decides') el.querySelectorAll('[data-v]').forEach((b) => b.addEventListener('click', () => {
+    pressGroup(el, '[data-v]', b);
+    const v = b.dataset.v;
+    VIEW.tag = v === 'u' ? 'u' : v === 'z' ? 'z' : 'occ';
+    if (v === 'y') buildTeamLinks();
+    TAGSHOW.p1 = v === 'u' || v === 'v' ? 1 : 0;
+    tween(ST, { seat: v === 'u' || v === 'v' ? 1 : 0, links: v === 'y' ? 1 : 0, twin: v === 'y' ? 0.4 : 0.75 }, 400);
+  }));
+  if (s.id === 'formula') {
+    const items = el.querySelectorAll('[data-f]');
+    const pick = (f) => {
+      items.forEach((x) => { x.classList.toggle('on', x.dataset.f === f); if (x.tagName === 'BUTTON') x.setAttribute('aria-pressed', String(x.dataset.f === f)); });
+      VIEW.tag = f === 'z' ? 'z' : 'occ';
+      if (f === 'y' || f === 'minus') buildTeamLinks();
+      tween(ST, { links: f === 'y' || f === 'minus' ? 1 : 0, labels: f === 'z' || f === 'min' ? 1 : 0.6 }, 400);
+    };
+    items.forEach((x) => x.addEventListener('click', () => pick(x.dataset.f)));
+  }
+  if (s.id === 'rules') {
+    const r = el.querySelector('#mc'), out = el.querySelector('#mcout'), sw = el.querySelector('#sw'), swt = el.querySelector('#swt'), swd = el.querySelector('#swd');
+    const upd = () => {
+      VIEW.mc = +r.value; out.textContent = `${Math.round(VIEW.mc * 100)}%`;
+      const caps = ROOMS.map((q) => capOf(q, VIEW.mc)), tot = caps.reduce((a, b) => a + b, 0), need = Math.max(...ATT), on = tot >= need;
+      sw.classList.toggle('off', !on); swt.textContent = on ? 'Switch ON · the limit is used' : 'Switch OFF · whole rooms are used';
+      swd.textContent = on ? `At ${Math.round(VIEW.mc * 100)}% the rooms hold ${tot} people, enough for the busiest day (${need}).` : `At ${Math.round(VIEW.mc * 100)}% the rooms would hold only ${tot} people, not enough for ${need}. The model falls back to all 40 desks.`;
+    };
+    r.addEventListener('input', upd); upd();
+  }
+  if (s.id === 'results' || s.id === 'lesson') {
+    const btns = el.querySelectorAll('[data-arr]');
+    const pick = (b, a = true) => { pressGroup(el, '[data-arr]', b); if (b.dataset.arr !== VIEW.arr) setArrangement(b.dataset.arr, a); };
+    btns.forEach((b) => b.addEventListener('click', () => pick(b)));
+    const init = [...btns].find((b) => b.dataset.arr === VIEW.arr); if (init) pick(init, false);
+  }
+}
+async function go(i, force = false) {
+  i = clamp(i, 0, SLIDES.length - 1);
+  if (i === cur && !force) return;
+  const prev = cur; cur = i; const tok = ++token; demoToken++;
+  const s = SLIDES[i];
+  try { history.replaceState(null, '', '#' + s.id); } catch (e) {}
+  [...prog.children].forEach((b, k) => { b.classList.toggle('on', k === i); b.classList.toggle('done', k < i); b.setAttribute('aria-selected', String(k === i)); });
+  counter.textContent = `${String(i + 1).padStart(2, '0')} / ${SLIDES.length}`;
+  document.getElementById('footsrc').textContent = s.foot;
+  document.getElementById('footnum').textContent = i ? String(i + 1).padStart(2, '0') : '';
+  live.textContent = `Slide ${i + 1} of ${SLIDES.length}`;
+  orbits.classList.toggle('in', s.id === 'cover' && innerWidth >= 860);
+  if (panelEl) { const old = panelEl; old.classList.remove('in'); setTimeout(() => old.remove(), reduced ? 0 : 420); panelEl = null; }
+  scrim.style.opacity = 0;
+  VIEW.tag = s.view.tag; VIEW.mc = 0.8;
+  setDay(s.view.day, prev !== -1);
+  if (VIEW.arr !== s.view.arr || walkers.size) setArrangement(s.view.arr, false);
+  Object.keys(TAGSHOW).forEach((k) => (TAGSHOW[k] = (s.tags && s.tags[k]) || 0));
+  if (s.st.sep) buildSep();
+  if (s.st.links) buildTeamLinks();
+  idle = { on: !!s.idle, t0: performance.now() };
+  const D = reduced ? 0 : (prev === -1 ? 1600 : s.dur);
+  tween(ST, s.st, D * 0.85);
+  camTo(s.cam, D, ease.io, s.arc || 0);
+  setTimeout(() => { if (tok !== token) return; const th = s.theme === 'light' ? 'on-light' : 'on-dark'; ui.className = th; labelLayer.className = th; }, D * 0.4);
+  setTimeout(() => {
+    if (tok !== token) return;
+    setScrim(s);
+    panelEl = document.createElement('section');
+    panelEl.className = `panel ${s.layout}`; panelEl.setAttribute('aria-label', `Slide ${i + 1}`);
+    panelEl.innerHTML = s.html; stageHtml.appendChild(panelEl); wire(s, panelEl);
+    requestAnimationFrame(() => requestAnimationFrame(() => panelEl && panelEl.classList.add('in')));
+  }, D * 0.55);
+}
+
+/* ============================================================ INPUT */
+document.getElementById('prev').addEventListener('click', () => go(cur - 1));
+document.getElementById('next').addEventListener('click', () => go(cur + 1));
+const motionBtn = document.getElementById('motion');
+motionBtn.setAttribute('aria-pressed', String(reduced));
+motionBtn.addEventListener('click', () => { reduced = !reduced; motionBtn.setAttribute('aria-pressed', String(reduced)); });
+sysReduced.addEventListener && sysReduced.addEventListener('change', () => { reduced = sysReduced.matches; motionBtn.setAttribute('aria-pressed', String(reduced)); });
+document.getElementById('fs').addEventListener('click', () => { const d = document.documentElement; try { const r = document.fullscreenElement ? document.exitFullscreen() : (d.requestFullscreen ? d.requestFullscreen() : null); if (r && r.catch) r.catch(() => {}); } catch (e) {} });
+addEventListener('keydown', (e) => {
+  const t = e.target;
+  if (t.closest && t.closest('input, textarea')) return;
+  if (['ArrowRight', 'PageDown'].includes(e.key) || (e.key === ' ' && !t.closest('button'))) { e.preventDefault(); go(cur + 1); }
+  if (['ArrowLeft', 'PageUp'].includes(e.key)) { e.preventDefault(); go(cur - 1); }
+  if (e.key === 'Home') go(0);
+  if (e.key === 'End') go(SLIDES.length - 1);
+  if (e.key === 'f' || e.key === 'F') document.getElementById('fs').click();
+});
+let tx = null;
+addEventListener('touchstart', (e) => { if (e.target.closest('.panel')) return; tx = e.touches[0].clientX; }, { passive: true });
+addEventListener('touchend', (e) => { if (tx == null) return; const d = e.changedTouches[0].clientX - tx; tx = null; if (Math.abs(d) > 60) go(cur + (d < 0 ? 1 : -1)); }, { passive: true });
+canvas.addEventListener('click', () => go(cur + 1));
+addEventListener('hashchange', () => { const k = SLIDES.findIndex((s) => '#' + s.id === location.hash); if (k >= 0 && k !== cur) go(k); });
+function resize() { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); if (cur >= 0) setScrim(SLIDES[cur]); }
+addEventListener('resize', resize);
+resize();
+setArrangement('l05', false);
+const start = SLIDES.findIndex((s) => '#' + s.id === location.hash);
+requestAnimationFrame(frame);
+go(start >= 0 ? start : 0);
+setTimeout(() => document.getElementById('loading').classList.add('gone'), 250);
+})();
+</script>
+
+</body></html>
